@@ -1,0 +1,1 @@
+# HA-dashboard-rotator
