@@ -1,0 +1,10 @@
+# =============================================================================
+# dashboard_shell_commands.yaml
+# Shell command used by the persistence layer to write the rotation file.
+#
+# The option strings contain no double-quotes, so passing them as the $0
+# argument to printf is safe — nothing for the shell to mis-tokenize.
+# =============================================================================
+
+shell_command:
+  write_dashboard_rotation: sh -c 'printf "%s" "$0" > /config/dashboard_rotation.txt' "{{ content }}"

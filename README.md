@@ -4,8 +4,8 @@ Automatic kiosk rotation manager for Home Assistant. Rotate through dashboards o
 
 ## Features
 
-- **Rotation** — timer-based, per-dashboard display times, auto-resumes after 5-minute pause
-- **Persistent config** — rotation list stored as JSON in an `input_text` entity; HA restores it automatically across restarts with no race condition and no file to edit
+- **Rotation** — timer-based, per-dashboard display times, auto-resumes after 5-minute pause, auto-starts on HA boot
+- **Persistent config** — rotation list stored as plain text in `/config/dashboard_rotation.txt`; HA restores it automatically across restarts with no race condition and no 255-character limit
 - **Dashboard picker** — enumerates all dashboards configured in HA; select from a dropdown to add to rotation
 - **Nav overlay** — browser_mod popup with Prev / Play-Pause / Stop / Next; LCARS-safe (uses custom:button-card, not card-mod on buttons)
 
@@ -21,11 +21,12 @@ Automatic kiosk rotation manager for Home Assistant. Rotate through dashboards o
 
 ### 1. Copy packages
 
-Copy the four files from `packages/` to `/config/packages/`:
+Copy the package files from `packages/` to `/config/packages/`:
 - `dashboard_manager_core.yaml`
 - `dashboard_manager_persistence.yaml`
 - `dashboard_manager_rotator.yaml`
 - `dashboard_manager_nav.yaml`
+- `dashboard_shell_commands.yaml`
 
 Ensure your `configuration.yaml` includes:
 ```yaml
@@ -60,8 +61,8 @@ In the Dashboard Manager UI, set **Target Browser ID** to match your kiosk's bro
 ### 5. Restart Home Assistant
 
 After restart:
-- If this is a fresh install: add dashboards via the UI; they auto-save
-- If migrating from the old file-based system: click **Settings → Developer Tools → Services**, call `script.dashboard_manager_save_to_json` once to bootstrap the JSON store from the current `input_select` options
+- Add dashboards via the UI; each change auto-saves to `/config/dashboard_rotation.txt` ~2 seconds later
+- On the next boot the rotation list is restored automatically, and rotation auto-starts if it was enabled (and not paused)
 
 ## Removing old static nav from dashboards
 
@@ -82,20 +83,40 @@ If you previously added nav button cards directly to individual dashboards, remo
 
 For each: open the dashboard in the HA UI editor, find the nav card (buttons calling `script.dashboard_nav_previous` / `script.dashboard_nav_next`), and delete it.
 
-## Data format
+## How persistence works
 
-The rotation list is stored as JSON in `input_text.dashboard_manager_json`:
+The rotation list lives in `input_select.dashboard_rotation` at runtime, as
+pipe-delimited option strings:
 
-```json
-[
-  {"label": "Cameras", "path": "/live-camera-test/cameras", "display_time": 30},
-  {"label": "News", "path": "/dashboard-news/0", "display_time": 60}
-]
-```
-
-The `input_select.dashboard_rotation` holds the same data as pipe-delimited strings for runtime use:
 ```
 Cameras | /live-camera-test/cameras | 30
+```
+
+These are persisted to disk as plain text in `/config/dashboard_rotation.txt`,
+with options joined by a `~~~` delimiter:
+
+```
+Cameras | /live-camera-test/cameras | 30~~~News | /dashboard-news/0 | 60
+```
+
+| Direction | Mechanism |
+|---|---|
+| **Save** | The `dashboard_manager_autosave` automation fires ~2 s after the `input_select` changes, calling `script.dashboard_manager_save_to_json`, which joins the options with `~~~` and writes them via `shell_command.write_dashboard_rotation`. |
+| **Load** | `sensor.dashboard_rotation_text` reads the file (wrapping the text in trivial JSON so it lands in an attribute, sidestepping HA's 255-char *state* limit). On the HA `start` event, `script.dashboard_manager_load_from_json` reads that attribute, splits on `~~~`, and repopulates the `input_select`. |
+
+**Why plain text, not JSON?** The option strings contain no double-quotes, so
+storing them verbatim avoids two traps that broke earlier JSON-based attempts:
+shell-quoting corruption when the JSON passes through `shell_command`, and
+RestrictedPython's blocked file I/O inside `python_script`. The 255-character
+state limit that rules out an `input_text` store does **not** apply to
+`command_line` sensor *attributes*.
+
+You'll need a matching `shell_command` (see `dashboard_shell_commands.yaml` in
+your `/config/packages/`):
+
+```yaml
+shell_command:
+  write_dashboard_rotation: sh -c 'printf "%s" "$0" > /config/dashboard_rotation.txt' "{{ content }}"
 ```
 
 ## LCARS theme note
