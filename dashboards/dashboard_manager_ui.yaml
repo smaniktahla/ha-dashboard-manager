@@ -1,0 +1,254 @@
+# =============================================================================
+# dashboard_manager_ui.yaml
+# Dashboard Manager Lovelace UI
+#
+# To use as a YAML-mode dashboard, add to configuration.yaml:
+#   lovelace:
+#     dashboards:
+#       dashboard-manager:
+#         mode: yaml
+#         title: "Dashboard Manager"
+#         icon: mdi:monitor-dashboard
+#         show_in_sidebar: true
+#         filename: dashboards/dashboard_manager_ui.yaml
+#
+# DEPENDENCIES: card-mod (HACS)
+# =============================================================================
+
+title: Dashboard Manager
+views:
+  - title: Dashboard Manager
+    path: dashboard-manager
+    icon: mdi:monitor-dashboard
+    badges: []
+    cards:
+
+      # -----------------------------------------------------------------------
+      # Header
+      # -----------------------------------------------------------------------
+      - type: markdown
+        content: |
+          ## Dashboard Manager
+          Kiosk rotation · {{
+            state_attr('input_select.dashboard_rotation', 'options') | reject('search', 'No dashboards') | list | length
+          }} dashboards · {{ 'Rotating' if is_state('input_boolean.dashboard_rotation_enabled', 'on') and not is_state('input_boolean.dashboard_rotation_paused', 'on') else ('Paused' if is_state('input_boolean.dashboard_rotation_paused', 'on') else 'Stopped') }}
+        card_mod:
+          style: |
+            ha-card {
+              background: linear-gradient(135deg, #1e3a5f 0%, #2d1b69 100%);
+              border: none;
+            }
+
+      # -----------------------------------------------------------------------
+      # Playback controls
+      # -----------------------------------------------------------------------
+      - type: horizontal-stack
+        cards:
+          - type: button
+            name: Previous
+            icon: mdi:skip-previous
+            tap_action:
+              action: call-service
+              service: script.dashboard_nav_previous
+
+          - type: button
+            entity: input_boolean.dashboard_rotation_paused
+            name: Play/Pause
+            icon: mdi:play-pause
+            tap_action:
+              action: toggle
+
+          - type: button
+            name: Next
+            icon: mdi:skip-next
+            tap_action:
+              action: call-service
+              service: script.dashboard_nav_next
+
+          - type: button
+            name: Show Nav
+            icon: mdi:remote
+            tap_action:
+              action: call-service
+              service: script.dashboard_nav_show
+
+      # -----------------------------------------------------------------------
+      # Rotation status
+      # -----------------------------------------------------------------------
+      - type: entities
+        title: Rotation Status
+        show_header_toggle: false
+        entities:
+          - entity: input_boolean.dashboard_rotation_enabled
+            name: Rotation Enabled
+          - entity: input_boolean.dashboard_rotation_paused
+            name: Paused
+          - entity: timer.dashboard_rotation_timer
+            name: Time Until Next
+          - entity: timer.dashboard_autoresume_timer
+            name: Auto-Resume Timer
+          - entity: sensor.kitchen_kiosk_browser_path
+            name: Kiosk Current Path
+        footer:
+          type: buttons
+          entities:
+            - entity: script.dashboard_rotation_start
+              name: Start
+              icon: mdi:play
+            - entity: script.dashboard_rotation_stop
+              name: Stop
+              icon: mdi:stop
+
+      # -----------------------------------------------------------------------
+      # Add from available dashboards (enumerated from HA)
+      # -----------------------------------------------------------------------
+      - type: entities
+        title: Add Dashboard from HA
+        show_header_toggle: false
+        entities:
+          - entity: sensor.dashboard_manager_all_dashboards
+            name: Dashboards in HA
+          - entity: input_select.dashboard_available
+            name: Available to Add
+          - entity: input_number.dashboard_default_display_time
+            name: Default Display Time
+        footer:
+          type: buttons
+          entities:
+            - entity: script.dashboard_add_from_available
+              name: Add to Rotation
+              icon: mdi:plus-circle
+
+      # -----------------------------------------------------------------------
+      # Add dashboard manually (custom path)
+      # -----------------------------------------------------------------------
+      - type: entities
+        title: Add Dashboard Manually
+        show_header_toggle: false
+        entities:
+          - entity: input_text.dashboard_manager_new_label
+            name: Label
+          - entity: input_text.dashboard_manager_new_path
+            name: Path (e.g. /dashboard-weather/0)
+          - entity: input_text.dashboard_manager_new_display_time
+            name: Display Time (seconds)
+        footer:
+          type: buttons
+          entities:
+            - entity: script.dashboard_rotation_add
+              name: Add
+              icon: mdi:plus
+
+      # -----------------------------------------------------------------------
+      # Current rotation — details & controls for selected dashboard
+      # -----------------------------------------------------------------------
+      - type: markdown
+        title: Selected Dashboard
+        content: >
+          {% set sel = states('input_select.dashboard_rotation') %}
+          {% if sel and 'No dashboards' not in sel %}
+            {% set parts = sel.split(' | ') %}
+            **{{ parts[0] | trim }}**
+            Path: `{{ parts[1] | trim if parts | length > 1 else '?' }}`
+            Display time: {{ parts[2] | trim if parts | length > 2 else '30' }}s
+          {% else %}
+            _No dashboard selected_
+          {% endif %}
+
+      - type: entities
+        title: Manage Selected Dashboard
+        show_header_toggle: false
+        entities:
+          - entity: input_select.dashboard_rotation
+            name: Selected Dashboard
+        footer:
+          type: buttons
+          entities:
+            - entity: script.dashboard_nav_jump
+              name: Jump
+              icon: mdi:television-play
+            - entity: script.dashboard_rotation_remove
+              name: Remove
+              icon: mdi:delete
+
+      # -----------------------------------------------------------------------
+      # Reorder
+      # -----------------------------------------------------------------------
+      - type: horizontal-stack
+        cards:
+          - type: button
+            name: Move Up
+            icon: mdi:arrow-up
+            tap_action:
+              action: call-service
+              service: script.dashboard_rotation_move_up
+
+          - type: button
+            name: Move Down
+            icon: mdi:arrow-down
+            tap_action:
+              action: call-service
+              service: script.dashboard_rotation_move_down
+
+      # -----------------------------------------------------------------------
+      # Update display time for selected dashboard
+      # -----------------------------------------------------------------------
+      - type: horizontal-stack
+        cards:
+          - type: button
+            name: 15s
+            tap_action:
+              action: call-service
+              service: script.dashboard_rotation_update_time
+              service_data: {new_time: 15}
+
+          - type: button
+            name: 30s
+            tap_action:
+              action: call-service
+              service: script.dashboard_rotation_update_time
+              service_data: {new_time: 30}
+
+          - type: button
+            name: 45s
+            tap_action:
+              action: call-service
+              service: script.dashboard_rotation_update_time
+              service_data: {new_time: 45}
+
+          - type: button
+            name: 60s
+            tap_action:
+              action: call-service
+              service: script.dashboard_rotation_update_time
+              service_data: {new_time: 60}
+
+      # -----------------------------------------------------------------------
+      # Full rotation order
+      # -----------------------------------------------------------------------
+      - type: markdown
+        title: Current Rotation Order
+        content: >
+          {% set opts = state_attr('input_select.dashboard_rotation', 'options') or [] %}
+          {% if opts | length == 0 or 'No dashboards' in opts[0] %}
+          _No dashboards configured._
+          {% else %}
+          {% for o in opts %}
+          {% set parts = o.split(' | ') %}
+          {{ loop.index }}. **{{ parts[0] | trim }}** — `{{ parts[1] | trim if parts | length > 1 else '?' }}` ({{ parts[2] | trim if parts | length > 2 else '30' }}s)
+          {% endfor %}
+          {% endif %}
+
+      # -----------------------------------------------------------------------
+      # Settings
+      # -----------------------------------------------------------------------
+      - type: entities
+        title: Settings
+        show_header_toggle: false
+        entities:
+          - entity: input_text.dashboard_manager_target_browser
+            name: Target Browser ID
+          - entity: input_boolean.dashboard_manager_verbose
+            name: Verbose Notifications
+          - entity: sensor.dashboard_manager_available
+            name: Available Dashboards Count

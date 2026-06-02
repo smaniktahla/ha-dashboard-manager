@@ -1,0 +1,144 @@
+# =============================================================================
+# dashboard_manager_nav.yaml
+# browser_mod popup navigation overlay
+#
+# LCARS COMPATIBILITY NOTE:
+#   HA-LCARS 4.x (card-mod 4.x) changed the CSS selector from ha-card to
+#   hui-card. Buttons inside a themed stack stretch full-height under LCARS
+#   because the theme applies flex:1 to hui-card elements.
+#
+#   Fix: use custom:button-card (Custom Button Card via HACS) for nav buttons.
+#   button-card has its own isolated style system (styles.card / styles.icon)
+#   that is not affected by card-mod theme selectors. Height/width set there
+#   always win regardless of active theme.
+#
+# DEPENDENCIES:
+#   - browser_mod (HACS)
+#   - custom:button-card (HACS → Custom Button Card)
+# =============================================================================
+
+script:
+  # ---------------------------------------------------------------------------
+  # Show the nav overlay popup on the kiosk browser
+  # ---------------------------------------------------------------------------
+  dashboard_nav_show:
+    alias: "[Dashboard] Show nav overlay"
+    mode: restart
+    sequence:
+      - variables:
+          browser_id: "{{ states('input_text.dashboard_manager_target_browser') | trim }}"
+
+      - service: browser_mod.popup
+        data:
+          browser_id: "{{ browser_id }}"
+          title: ""
+          dismissable: true
+          card:
+            type: horizontal-stack
+            cards:
+
+              - type: custom:button-card
+                name: Previous
+                icon: mdi:skip-previous
+                tap_action:
+                  action: call-service
+                  service: script.dashboard_nav_previous
+                styles:
+                  card:
+                    - width: 110px
+                    - height: 80px
+                    - background: "rgba(51, 65, 85, 0.95)"
+                    - border: "2px solid rgba(100, 116, 139, 0.6)"
+                    - border-radius: 8px
+                    - margin: 0 6px
+                  icon:
+                    - width: 36px
+                    - color: white
+                  name:
+                    - color: white
+                    - font-size: 12px
+
+              - type: custom:button-card
+                name: Stop
+                icon: mdi:stop-circle
+                tap_action:
+                  action: call-service
+                  service: script.dashboard_rotation_stop
+                styles:
+                  card:
+                    - width: 110px
+                    - height: 80px
+                    - background: "rgba(220, 38, 38, 0.9)"
+                    - border: "2px solid rgba(239, 68, 68, 0.6)"
+                    - border-radius: 8px
+                    - margin: 0 6px
+                  icon:
+                    - width: 36px
+                    - color: white
+                  name:
+                    - color: white
+                    - font-size: 12px
+
+              - type: custom:button-card
+                entity: input_boolean.dashboard_rotation_paused
+                name: Play/Pause
+                icon: mdi:play-pause
+                tap_action:
+                  action: toggle
+                state:
+                  - value: "on"
+                    styles:
+                      card:
+                        - background: "rgba(234, 179, 8, 0.9)"
+                        - border: "2px solid rgba(253, 224, 71, 0.6)"
+                  - value: "off"
+                    styles:
+                      card:
+                        - background: "rgba(34, 197, 94, 0.9)"
+                        - border: "2px solid rgba(74, 222, 128, 0.6)"
+                styles:
+                  card:
+                    - width: 110px
+                    - height: 80px
+                    - border-radius: 8px
+                    - margin: 0 6px
+                  icon:
+                    - width: 36px
+                    - color: white
+                  name:
+                    - color: white
+                    - font-size: 12px
+
+              - type: custom:button-card
+                name: Next
+                icon: mdi:skip-next
+                tap_action:
+                  action: call-service
+                  service: script.dashboard_nav_next
+                styles:
+                  card:
+                    - width: 110px
+                    - height: 80px
+                    - background: "rgba(51, 65, 85, 0.95)"
+                    - border: "2px solid rgba(100, 116, 139, 0.6)"
+                    - border-radius: 8px
+                    - margin: 0 6px
+                  icon:
+                    - width: 36px
+                    - color: white
+                  name:
+                    - color: white
+                    - font-size: 12px
+
+  # ---------------------------------------------------------------------------
+  # Close the nav overlay popup
+  # ---------------------------------------------------------------------------
+  dashboard_nav_hide:
+    alias: "[Dashboard] Hide nav overlay"
+    mode: restart
+    sequence:
+      - variables:
+          browser_id: "{{ states('input_text.dashboard_manager_target_browser') | trim }}"
+      - service: browser_mod.close_popup
+        data:
+          browser_id: "{{ browser_id }}"
