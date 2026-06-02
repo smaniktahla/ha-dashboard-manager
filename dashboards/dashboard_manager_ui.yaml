@@ -228,16 +228,16 @@ views:
       # -----------------------------------------------------------------------
       - type: markdown
         title: Current Rotation Order
-        content: >
+        content: |
           {% set opts = state_attr('input_select.dashboard_rotation', 'options') or [] %}
-          {% if opts | length == 0 or 'No dashboards' in opts[0] %}
+          {%- if opts | length == 0 or 'No dashboards' in opts[0] %}
           _No dashboards configured._
-          {% else %}
-          {% for o in opts %}
-          {% set parts = o.split(' | ') %}
+          {%- else %}
+          {%- for o in opts %}
+          {%- set parts = o.split(' | ') %}
           {{ loop.index }}. **{{ parts[0] | trim }}** — `{{ parts[1] | trim if parts | length > 1 else '?' }}` ({{ parts[2] | trim if parts | length > 2 else '30' }}s)
-          {% endfor %}
-          {% endif %}
+          {%- endfor %}
+          {%- endif %}
 
       # -----------------------------------------------------------------------
       # Settings

@@ -1,14 +1,20 @@
 # =============================================================================
 # dashboard_manager_persistence.yaml
-# JSON-based persistence (no file editing required) + dashboard enumeration
+# File-based JSON persistence + dashboard enumeration
 #
 # HOW PERSISTENCE WORKS:
-#   input_text.dashboard_manager_json holds the rotation list as a JSON string.
-#   HA automatically restores input_text values across restarts via .storage/
-#   so there is no startup race condition and no file to hand-edit.
+#   shell_command.write_dashboard_rotation writes the input_select options
+#   (joined by '~~~') as plain text to /config/dashboard_rotation.txt.
+#   sensor.dashboard_rotation_text reads that file via command_line, wrapping
+#   the quote-free text in trivial JSON so it lands in an attribute.
+#   On HA start: the restore automation reads the sensor and populates
+#   input_select.dashboard_rotation. No startup race — sensor is available
+#   before integrations finish loading.
 #
-#   On HA start: JSON → input_select options (one automation, fires immediately)
-#   On any change to the rotation list: input_select options → JSON (auto-save)
+#   WHY PLAIN TEXT (not JSON): the option strings contain no double-quotes,
+#   so storing them verbatim sidesteps both shell-quoting breakage and
+#   RestrictedPython's blocked file I/O. HA's 255-char state limit doesn't
+#   apply to command_line sensor *attributes*, only to state values.
 # =============================================================================
 
 # ---------------------------------------------------------------------------
@@ -26,6 +32,15 @@ command_line:
       json_attributes:
         - data
 
+  - sensor:
+      name: dashboard_rotation_text
+      unique_id: dashboard_rotation_text
+      command: 'printf "{\"data\":\"%s\"}" "$(cat /config/dashboard_rotation.txt 2>/dev/null)"'
+      scan_interval: 3600
+      value_template: "ok"
+      json_attributes:
+        - data
+
 template:
   - sensor:
       # All dashboards from HA, formatted as "Title | /url_path"
@@ -33,15 +48,17 @@ template:
         unique_id: dashboard_manager_all_dashboards
         state: >
           {% set raw = state_attr('sensor.lovelace_dashboards_raw', 'data') %}
-          {{ (raw.items | length) if raw and raw.items is defined else 0 }} dashboards
+          {% set items = raw['items'] if raw and 'items' in raw else [] %}
+          {{ items | length }} dashboards
         attributes:
           dashboards: >
             {% set raw = state_attr('sensor.lovelace_dashboards_raw', 'data') %}
-            {% if raw and raw.items is defined %}
+            {% set items = raw['items'] if raw and 'items' in raw else [] %}
+            {% if items | length > 0 %}
               {% set ns = namespace(result=[]) %}
-              {% for d in raw.items %}
-                {% set title = d.title | default('Untitled') %}
-                {% set url = '/' ~ d.url_path | default('') %}
+              {% for d in items %}
+                {% set title = d.get('title', 'Untitled') %}
+                {% set url = '/' ~ d.get('url_path', '') %}
                 {% set ns.result = ns.result + [title ~ ' | ' ~ url] %}
               {% endfor %}
               {{ ns.result | sort }}
@@ -55,33 +72,38 @@ template:
         state: >
           {% set all = state_attr('sensor.dashboard_manager_all_dashboards', 'dashboards') or [] %}
           {% set opts = state_attr('input_select.dashboard_rotation', 'options') or [] %}
-          {% set in_rotation = opts | map('regex_replace', ' \\| \\d+$', '') | list %}
-          {% set available = [] %}
-          {% for d in all %}
-            {% if d not in in_rotation %}
-              {% set available = available + [d] %}
+          {% set ns = namespace(paths=[], count=0) %}
+          {% for item in opts %}
+            {% set parts = item.split(' | ') %}
+            {% if parts | length >= 2 %}
+              {% set ns.paths = ns.paths + [parts[1] | trim] %}
             {% endif %}
           {% endfor %}
-          {{ available | length }} available
+          {% for d in all %}
+            {% set parts = d.split(' | ') %}
+            {% if parts | length >= 2 and parts[1] | trim not in ns.paths %}
+              {% set ns.count = ns.count + 1 %}
+            {% endif %}
+          {% endfor %}
+          {{ ns.count }} available
         attributes:
           available: >
             {% set all = state_attr('sensor.dashboard_manager_all_dashboards', 'dashboards') or [] %}
             {% set opts = state_attr('input_select.dashboard_rotation', 'options') or [] %}
-            {% set rotation_paths = [] %}
+            {% set ns = namespace(paths=[], result=[]) %}
             {% for item in opts %}
               {% set parts = item.split(' | ') %}
               {% if parts | length >= 2 %}
-                {% set rotation_paths = rotation_paths + [parts[1] | trim] %}
+                {% set ns.paths = ns.paths + [parts[1] | trim] %}
               {% endif %}
             {% endfor %}
-            {% set available = [] %}
             {% for d in all %}
               {% set parts = d.split(' | ') %}
-              {% if parts | length >= 2 and parts[1] | trim not in rotation_paths %}
-                {% set available = available + [d] %}
+              {% if parts | length >= 2 and parts[1] | trim not in ns.paths %}
+                {% set ns.result = ns.result + [d] %}
               {% endif %}
             {% endfor %}
-            {{ available if available | length > 0 else ['All dashboards in rotation'] }}
+            {{ ns.result if ns.result | length > 0 else ['All dashboards in rotation'] }}
 
 automation:
   # ---------------------------------------------------------------------------
@@ -138,28 +160,25 @@ script:
   # Load rotation list from JSON store into input_select
   # ---------------------------------------------------------------------------
   dashboard_manager_load_from_json:
-    alias: "[Dashboard] Load rotation from JSON store"
+    alias: "[Dashboard] Load rotation from text store"
     mode: restart
     sequence:
+      - service: homeassistant.update_entity
+        data:
+          entity_id: sensor.dashboard_rotation_text
+
+      - delay:
+          milliseconds: 500
+
       - variables:
-          json_raw: "{{ states('input_text.dashboard_manager_json') | trim }}"
+          raw: "{{ state_attr('sensor.dashboard_rotation_text', 'data') or '' }}"
 
       - choose:
-          # If JSON store has data, load it
-          - conditions: "{{ json_raw | length > 2 }}"
+          # If file has data, load it
+          - conditions: "{{ raw | length > 0 }}"
             sequence:
               - variables:
-                  dashboards: >
-                    {% set data = json_raw | from_json %}
-                    {% if data is iterable and data | length > 0 %}
-                      {% set result = [] %}
-                      {% for d in data %}
-                        {% set result = result + [d.label ~ ' | ' ~ d.path ~ ' | ' ~ d.display_time | string] %}
-                      {% endfor %}
-                      {{ result }}
-                    {% else %}
-                      ['No dashboards configured']
-                    {% endif %}
+                  dashboards: "{{ raw.split('~~~') }}"
 
               - service: input_select.set_options
                 data:
@@ -171,7 +190,7 @@ script:
                   entity_id: input_select.dashboard_rotation
                   option: "{{ dashboards | first }}"
 
-        # First run: JSON store is empty — nothing to load, leave input_select as-is
+        # First run: file missing or empty
         default:
           - service: persistent_notification.create
             data:
@@ -183,33 +202,24 @@ script:
   # Save current rotation list to JSON store
   # ---------------------------------------------------------------------------
   dashboard_manager_save_to_json:
-    alias: "[Dashboard] Save rotation to JSON store"
+    alias: "[Dashboard] Save rotation to text store"
     mode: restart
     sequence:
       - variables:
-          opts: >
-            {{ state_attr('input_select.dashboard_rotation', 'options')
-               | reject('search', 'No dashboards')
-               | list }}
-          json_data: >
-            {% set result = [] %}
-            {% for item in opts %}
-              {% set parts = item.split(' | ') %}
-              {% if parts | length >= 3 %}
-                {% set entry = {
-                  'label': parts[0] | trim,
-                  'path': parts[1] | trim,
-                  'display_time': parts[2] | trim | int
-                } %}
-                {% set result = result + [entry] %}
-              {% endif %}
-            {% endfor %}
-            {{ result | tojson }}
+          content: >-
+            {%- set opts = state_attr('input_select.dashboard_rotation', 'options') or [] -%}
+            {%- set ns = namespace(items=[]) -%}
+            {%- for o in opts -%}
+              {%- if 'No dashboards' not in o -%}{%- set ns.items = ns.items + [o] -%}{%- endif -%}
+            {%- endfor -%}
+            {{ ns.items | join('~~~') }}
 
-      - service: input_text.set_value
+      - condition: template
+        value_template: "{{ content | length > 0 }}"
+
+      - service: shell_command.write_dashboard_rotation
         data:
-          entity_id: input_text.dashboard_manager_json
-          value: "{{ json_data }}"
+          content: "{{ content }}"
 
   # ---------------------------------------------------------------------------
   # Update the available dashboards input_select

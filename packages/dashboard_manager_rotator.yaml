@@ -179,3 +179,28 @@ automation:
         target:
           entity_id: timer.dashboard_autoresume_timer
     mode: single
+
+  # On HA start: the enabled boolean comes up "on" without a state change, so
+  # the start-on-enable automation never fires. Kick off the timer here once
+  # the persistence restore has repopulated the rotation list.
+  - id: dashboard_rotation_start_on_ha_start
+    alias: "[Dashboard] Start rotation on HA start"
+    trigger:
+      - platform: homeassistant
+        event: start
+    condition:
+      - condition: state
+        entity_id: input_boolean.dashboard_rotation_enabled
+        state: "on"
+      - condition: state
+        entity_id: input_boolean.dashboard_rotation_paused
+        state: "off"
+    action:
+      - delay:
+          seconds: 5
+      - condition: template
+        value_template: >
+          {{ 'No dashboards' not in states('input_select.dashboard_rotation') }}
+      - service: script.dashboard_nav_jump
+      - service: script.dashboard_rotation_schedule_next
+    mode: single

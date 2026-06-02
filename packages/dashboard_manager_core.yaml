@@ -1,36 +1,13 @@
 # =============================================================================
 # dashboard_manager_core.yaml
 # Core helpers and scripts for the Dashboard Manager
+#
+# NOTE: input_text helpers (dashboard_manager_new_label, new_path,
+# new_display_time, target_browser, json) must be created via the HA UI
+# (Settings → Helpers) or are pre-created by the install script.
+# HA 2024+ removed YAML-based input_text configuration.
+# See README.md → Installation for the helper creation list.
 # =============================================================================
-
-input_text:
-  dashboard_manager_new_label:
-    name: Dashboard Label
-    max: 128
-    icon: mdi:label
-
-  dashboard_manager_new_path:
-    name: Dashboard Path
-    max: 255
-    icon: mdi:folder
-
-  dashboard_manager_new_display_time:
-    name: Display Time (seconds)
-    max: 4
-    initial: "30"
-    icon: mdi:timer
-
-  dashboard_manager_target_browser:
-    name: Target Browser ID
-    max: 128
-    initial: "kitchen_kiosk"
-    icon: mdi:monitor
-
-  # JSON persistence store — HA auto-restores this across restarts
-  dashboard_manager_json:
-    name: Dashboard Manager JSON Store
-    max: 10000
-    icon: mdi:code-json
 
 input_boolean:
   dashboard_manager_verbose:
@@ -93,14 +70,14 @@ script:
       - variables:
           new_opt: "{{ label if label | length > 0 else 'Dashboard' }} | {{ path }} | {{ display_time }}"
           cleaned: >
-            {% set result = [] %}
+            {% set ns = namespace(result=[]) %}
             {% for item in opts %}
               {% set parts = item.split(' | ') %}
               {% if parts | length >= 2 and parts[1] | trim != path %}
-                {% set result = result + [item] %}
+                {% set ns.result = ns.result + [item] %}
               {% endif %}
             {% endfor %}
-            {{ result }}
+            {{ ns.result }}
 
       - service: input_select.set_options
         data:
@@ -148,14 +125,14 @@ script:
           path: "{{ parts[1] | trim }}"
           new_opt: "{{ label }} | {{ path }} | {{ display_time }}"
           cleaned: >
-            {% set result = [] %}
+            {% set ns = namespace(result=[]) %}
             {% for item in opts %}
               {% set p = item.split(' | ') %}
               {% if p | length >= 2 and p[1] | trim != path %}
-                {% set result = result + [item] %}
+                {% set ns.result = ns.result + [item] %}
               {% endif %}
             {% endfor %}
-            {{ result }}
+            {{ ns.result }}
 
       - service: input_select.set_options
         data:
@@ -299,15 +276,15 @@ script:
           path: "{{ parts[1] | trim if parts | length > 1 else '/' }}"
           new_opt: "{{ label }} | {{ path }} | {{ time_val }}"
           new_list: >
-            {% set result = [] %}
+            {% set ns = namespace(result=[]) %}
             {% for item in opts %}
               {% if item == cur_sel %}
-                {% set result = result + [new_opt] %}
+                {% set ns.result = ns.result + [new_opt] %}
               {% else %}
-                {% set result = result + [item] %}
+                {% set ns.result = ns.result + [item] %}
               {% endif %}
             {% endfor %}
-            {{ result }}
+            {{ ns.result }}
 
       - service: input_select.set_options
         data:
