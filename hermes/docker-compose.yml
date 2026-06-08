@@ -1,0 +1,14 @@
+services:
+  hermes:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hermes-custom:latest
+    restart: unless-stopped
+    ports:
+      - "9119:9119"
+      - "8642:8642"
+    volumes:
+      - ~/.hermes:/opt/data
+    env_file:
+      - ~/.hermes/.env
