@@ -202,12 +202,13 @@ views:
         entities:
           - entity: input_text.dashboard_manager_new_display_time
             name: Custom (seconds)
-        footer:
-          type: buttons
-          entities:
-            - entity: script.dashboard_rotation_update_time_from_input
-              name: Set
-              icon: mdi:clock-edit
+
+      - type: button
+        name: Set Custom Time
+        icon: mdi:clock-edit
+        tap_action:
+          action: call-service
+          service: script.dashboard_rotation_update_time_from_input
 
       - type: horizontal-stack
         cards:
