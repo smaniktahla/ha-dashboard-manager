@@ -1,0 +1,206 @@
+# =============================================================================
+# dashboard_manager_rotator.yaml
+# Timer-based automatic rotation with per-dashboard display times
+# =============================================================================
+
+timer:
+  dashboard_rotation_timer:
+    name: "Dashboard Rotation Timer"
+    restore: true
+
+  dashboard_autoresume_timer:
+    name: "Dashboard Auto-Resume Timer"
+    duration: "00:05:00"
+
+input_number:
+  dashboard_current_index:
+    name: "Current Dashboard Index"
+    min: 0
+    max: 100
+    step: 1
+    mode: box
+
+script:
+  dashboard_rotation_start:
+    alias: "[Dashboard] Start rotation"
+    mode: restart
+    sequence:
+      - service: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.dashboard_rotation_paused
+      - service: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.dashboard_rotation_enabled
+      - service: script.dashboard_nav_jump
+      - service: script.dashboard_rotation_schedule_next
+
+  dashboard_rotation_stop:
+    alias: "[Dashboard] Stop rotation"
+    mode: restart
+    sequence:
+      - service: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.dashboard_rotation_enabled
+      - service: timer.cancel
+        target:
+          entity_id: timer.dashboard_rotation_timer
+
+  dashboard_rotation_schedule_next:
+    alias: "[Dashboard] Schedule next dashboard"
+    mode: restart
+    sequence:
+      - variables:
+          raw: "{{ states('input_select.dashboard_rotation') | trim }}"
+          parts: "{{ raw.split(' | ') }}"
+          display_time: "{{ parts[2] | trim | int(30) if parts | length > 2 else 30 }}"
+          duration: >
+            {% if display_time < 60 %}
+              00:00:{{ '%02d' | format(display_time) }}
+            {% else %}
+              00:{{ '%02d' | format(display_time // 60) }}:{{ '%02d' | format(display_time % 60) }}
+            {% endif %}
+
+      - service: timer.start
+        data:
+          entity_id: timer.dashboard_rotation_timer
+          duration: "{{ duration }}"
+
+  dashboard_rotation_next:
+    alias: "[Dashboard] Advance to next dashboard"
+    mode: restart
+    sequence:
+      - service: input_select.select_next
+        data:
+          entity_id: input_select.dashboard_rotation
+          cycle: true
+      - service: script.dashboard_nav_jump
+      - service: script.dashboard_rotation_schedule_next
+
+  dashboard_rotation_resume:
+    alias: "[Dashboard] Resume rotation"
+    mode: restart
+    sequence:
+      - service: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.dashboard_rotation_paused
+      - service: script.dashboard_rotation_next
+
+automation:
+  - id: dashboard_rotation_start_on_enable
+    alias: "[Dashboard] Start rotation on enable"
+    trigger:
+      - platform: state
+        entity_id: input_boolean.dashboard_rotation_enabled
+        to: "on"
+    condition:
+      - condition: state
+        entity_id: input_boolean.dashboard_rotation_paused
+        state: "off"
+    action:
+      - service: script.dashboard_rotation_schedule_next
+    mode: single
+
+  - id: dashboard_rotation_advance_on_timer
+    alias: "[Dashboard] Advance when timer finishes"
+    trigger:
+      - platform: event
+        event_type: timer.finished
+        event_data:
+          entity_id: timer.dashboard_rotation_timer
+    condition:
+      - condition: state
+        entity_id: input_boolean.dashboard_rotation_enabled
+        state: "on"
+      - condition: state
+        entity_id: input_boolean.dashboard_rotation_paused
+        state: "off"
+    action:
+      - service: script.dashboard_rotation_next
+    mode: single
+
+  - id: dashboard_rotation_cancel_on_pause
+    alias: "[Dashboard] Cancel timer on pause"
+    trigger:
+      - platform: state
+        entity_id: input_boolean.dashboard_rotation_paused
+        to: "on"
+    action:
+      - service: timer.cancel
+        target:
+          entity_id: timer.dashboard_rotation_timer
+      - service: timer.start
+        target:
+          entity_id: timer.dashboard_autoresume_timer
+    mode: single
+
+  - id: dashboard_rotation_resume_on_unpause
+    alias: "[Dashboard] Resume timer on unpause"
+    trigger:
+      - platform: state
+        entity_id: input_boolean.dashboard_rotation_paused
+        to: "off"
+    condition:
+      - condition: state
+        entity_id: input_boolean.dashboard_rotation_enabled
+        state: "on"
+    action:
+      - service: timer.cancel
+        target:
+          entity_id: timer.dashboard_autoresume_timer
+      - service: script.dashboard_rotation_schedule_next
+    mode: single
+
+  - id: dashboard_rotation_autoresume
+    alias: "[Dashboard] Auto-resume after 5 minutes"
+    trigger:
+      - platform: event
+        event_type: timer.finished
+        event_data:
+          entity_id: timer.dashboard_autoresume_timer
+    condition:
+      - condition: state
+        entity_id: input_boolean.dashboard_rotation_paused
+        state: "on"
+      - condition: state
+        entity_id: input_boolean.dashboard_rotation_enabled
+        state: "on"
+    action:
+      - service: script.dashboard_rotation_resume
+    mode: single
+
+  - id: dashboard_rotation_cancel_autoresume
+    alias: "[Dashboard] Cancel auto-resume on disable"
+    trigger:
+      - platform: state
+        entity_id: input_boolean.dashboard_rotation_enabled
+        to: "off"
+    action:
+      - service: timer.cancel
+        target:
+          entity_id: timer.dashboard_autoresume_timer
+    mode: single
+
+  # On HA start: the enabled boolean comes up "on" without a state change, so
+  # the start-on-enable automation never fires. Kick off the timer here once
+  # the persistence restore has repopulated the rotation list.
+  - id: dashboard_rotation_start_on_ha_start
+    alias: "[Dashboard] Start rotation on HA start"
+    trigger:
+      - platform: homeassistant
+        event: start
+    condition:
+      - condition: state
+        entity_id: input_boolean.dashboard_rotation_enabled
+        state: "on"
+      - condition: state
+        entity_id: input_boolean.dashboard_rotation_paused
+        state: "off"
+    action:
+      - delay:
+          seconds: 5
+      - condition: template
+        value_template: >
+          {{ 'No dashboards' not in states('input_select.dashboard_rotation') }}
+      - service: script.dashboard_nav_jump
+      - service: script.dashboard_rotation_schedule_next
+    mode: single

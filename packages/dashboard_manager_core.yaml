@@ -1,0 +1,351 @@
+# =============================================================================
+# dashboard_manager_core.yaml
+# Core helpers and scripts for the Dashboard Manager
+#
+# NOTE: input_text helpers (dashboard_manager_new_label, new_path,
+# new_display_time, target_browser, json) must be created via the HA UI
+# (Settings → Helpers) or are pre-created by the install script.
+# HA 2024+ removed YAML-based input_text configuration.
+# See README.md → Installation for the helper creation list.
+# =============================================================================
+
+input_boolean:
+  dashboard_manager_verbose:
+    name: "Dashboard Manager: Verbose notifications"
+    icon: mdi:message-badge
+
+  dashboard_rotation_enabled:
+    name: "Dashboard Rotation Enabled"
+    icon: mdi:play-circle
+    initial: on
+
+  dashboard_rotation_paused:
+    name: "Dashboard Rotation Paused"
+    icon: mdi:pause-circle
+
+input_select:
+  dashboard_rotation:
+    name: Dashboard Rotation List
+    options:
+      - "No dashboards configured"
+    icon: mdi:view-dashboard
+
+  # Populated by persistence.yaml with dashboards not yet in rotation
+  dashboard_available:
+    name: Available Dashboards
+    options:
+      - "Loading..."
+    icon: mdi:view-dashboard-outline
+
+input_number:
+  dashboard_default_display_time:
+    name: Default Display Time
+    min: 5
+    max: 300
+    step: 5
+    unit_of_measurement: "s"
+    icon: mdi:timer
+
+script:
+
+  # ---------------------------------------------------------------------------
+  # Add dashboard via manual path entry
+  # ---------------------------------------------------------------------------
+  dashboard_rotation_add:
+    alias: "[Dashboard] Add via manual entry"
+    mode: restart
+    sequence:
+      - variables:
+          label: "{{ states('input_text.dashboard_manager_new_label') | trim }}"
+          path: "{{ states('input_text.dashboard_manager_new_path') | trim }}"
+          display_time: "{{ states('input_text.dashboard_manager_new_display_time') | trim }}"
+          opts: "{{ state_attr('input_select.dashboard_rotation', 'options') or [] }}"
+
+      - condition: template
+        value_template: "{{ path | length > 0 and path.startswith('/') }}"
+
+      - condition: template
+        value_template: "{{ display_time | int(0) > 0 }}"
+
+      - variables:
+          new_opt: "{{ label if label | length > 0 else 'Dashboard' }} | {{ path }} | {{ display_time }}"
+          cleaned: >
+            {% set ns = namespace(result=[]) %}
+            {% for item in opts %}
+              {% set parts = item.split(' | ') %}
+              {% if parts | length >= 2 and parts[1] | trim != path %}
+                {% set ns.result = ns.result + [item] %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.result }}
+
+      - service: input_select.set_options
+        data:
+          entity_id: input_select.dashboard_rotation
+          options: "{{ (cleaned + [new_opt]) | tojson | from_json }}"
+
+      - service: input_select.select_option
+        data:
+          entity_id: input_select.dashboard_rotation
+          option: "{{ new_opt }}"
+
+      - service: input_text.set_value
+        data: {entity_id: input_text.dashboard_manager_new_label, value: ""}
+      - service: input_text.set_value
+        data: {entity_id: input_text.dashboard_manager_new_path, value: ""}
+      - service: input_text.set_value
+        data: {entity_id: input_text.dashboard_manager_new_display_time, value: "30"}
+
+      - service: persistent_notification.create
+        data:
+          title: "Dashboard Manager"
+          message: "Added: {{ label if label | length > 0 else path }}"
+
+  # ---------------------------------------------------------------------------
+  # Add dashboard selected from the available list
+  # ---------------------------------------------------------------------------
+  dashboard_add_from_available:
+    alias: "[Dashboard] Add from available list"
+    mode: restart
+    sequence:
+      - variables:
+          selected: "{{ states('input_select.dashboard_available') | trim }}"
+          opts: "{{ state_attr('input_select.dashboard_rotation', 'options') or [] }}"
+          display_time: "{{ states('input_number.dashboard_default_display_time') | int(30) }}"
+
+      - condition: template
+        value_template: >
+          {{ selected | length > 0
+             and selected not in ['Loading...', 'No dashboards available', 'All dashboards in rotation']
+             and ' | ' in selected }}
+
+      - variables:
+          parts: "{{ selected.split(' | ') }}"
+          label: "{{ parts[0] | trim }}"
+          path: "{{ parts[1] | trim }}"
+          new_opt: "{{ label }} | {{ path }} | {{ display_time }}"
+          cleaned: >
+            {% set ns = namespace(result=[]) %}
+            {% for item in opts %}
+              {% set p = item.split(' | ') %}
+              {% if p | length >= 2 and p[1] | trim != path %}
+                {% set ns.result = ns.result + [item] %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.result }}
+
+      - service: input_select.set_options
+        data:
+          entity_id: input_select.dashboard_rotation
+          options: "{{ (cleaned + [new_opt]) | tojson | from_json }}"
+
+      - service: input_select.select_option
+        data:
+          entity_id: input_select.dashboard_rotation
+          option: "{{ new_opt }}"
+
+      - service: persistent_notification.create
+        data:
+          title: "Dashboard Manager"
+          message: "Added {{ label }} to rotation ({{ display_time }}s)"
+
+  # ---------------------------------------------------------------------------
+  # Remove current selection from rotation
+  # ---------------------------------------------------------------------------
+  dashboard_rotation_remove:
+    alias: "[Dashboard] Remove current"
+    mode: restart
+    sequence:
+      - variables:
+          cur_sel: "{{ states('input_select.dashboard_rotation') | trim }}"
+          opts: "{{ state_attr('input_select.dashboard_rotation', 'options') or [] }}"
+          new_list: "{{ opts | reject('equalto', cur_sel) | list }}"
+
+      - service: input_select.set_options
+        data:
+          entity_id: input_select.dashboard_rotation
+          options: >
+            {{ new_list if new_list | length > 0 else ['No dashboards configured'] }}
+
+      - choose:
+          - conditions: "{{ new_list | length > 0 }}"
+            sequence:
+              - service: input_select.select_option
+                data:
+                  entity_id: input_select.dashboard_rotation
+                  option: "{{ new_list | first }}"
+
+      - service: persistent_notification.create
+        data:
+          title: "Dashboard Manager"
+          message: "Removed from rotation"
+
+  # ---------------------------------------------------------------------------
+  # Move current selection up
+  # ---------------------------------------------------------------------------
+  dashboard_rotation_move_up:
+    alias: "[Dashboard] Move up"
+    mode: restart
+    sequence:
+      - variables:
+          cur_sel: "{{ states('input_select.dashboard_rotation') | trim }}"
+          opts: "{{ state_attr('input_select.dashboard_rotation', 'options') or [] }}"
+          idx: >
+            {% set ns = namespace(i=-1) %}
+            {% for o in opts %}
+              {% if o == cur_sel %}{% set ns.i = loop.index0 %}{% endif %}
+            {% endfor %}
+            {{ ns.i }}
+
+      - condition: template
+        value_template: "{{ idx | int(-1) > 0 }}"
+
+      - variables:
+          i: "{{ idx | int }}"
+          a: "{{ opts | list }}"
+          swapped: "{{ a[:(i-1)] + [a[i], a[i-1]] + a[(i+1):] }}"
+
+      - service: input_select.set_options
+        data:
+          entity_id: input_select.dashboard_rotation
+          options: "{{ swapped | tojson | from_json }}"
+
+      - service: input_select.select_option
+        data:
+          entity_id: input_select.dashboard_rotation
+          option: "{{ cur_sel }}"
+
+  # ---------------------------------------------------------------------------
+  # Move current selection down
+  # ---------------------------------------------------------------------------
+  dashboard_rotation_move_down:
+    alias: "[Dashboard] Move down"
+    mode: restart
+    sequence:
+      - variables:
+          cur_sel: "{{ states('input_select.dashboard_rotation') | trim }}"
+          opts: "{{ state_attr('input_select.dashboard_rotation', 'options') or [] }}"
+          n: "{{ opts | length }}"
+          idx: >
+            {% set ns = namespace(i=-1) %}
+            {% for o in opts %}
+              {% if o == cur_sel %}{% set ns.i = loop.index0 %}{% endif %}
+            {% endfor %}
+            {{ ns.i }}
+
+      - condition: template
+        value_template: "{{ idx | int(-1) >= 0 and idx | int < (n | int - 1) }}"
+
+      - variables:
+          i: "{{ idx | int }}"
+          a: "{{ opts | list }}"
+          swapped: "{{ a[:i] + [a[i+1], a[i]] + a[(i+2):] }}"
+
+      - service: input_select.set_options
+        data:
+          entity_id: input_select.dashboard_rotation
+          options: "{{ swapped | tojson | from_json }}"
+
+      - service: input_select.select_option
+        data:
+          entity_id: input_select.dashboard_rotation
+          option: "{{ cur_sel }}"
+
+  # ---------------------------------------------------------------------------
+  # Update display time for current selection
+  # ---------------------------------------------------------------------------
+  dashboard_rotation_update_time:
+    alias: "[Dashboard] Update display time"
+    mode: restart
+    fields:
+      new_time:
+        description: "New display time in seconds"
+        example: "45"
+    sequence:
+      - variables:
+          cur_sel: "{{ states('input_select.dashboard_rotation') | trim }}"
+          opts: "{{ state_attr('input_select.dashboard_rotation', 'options') or [] }}"
+          time_val: "{{ new_time | int(30) }}"
+
+      - condition: template
+        value_template: "{{ cur_sel | length > 0 and opts | length > 0 and 'No dashboards' not in cur_sel }}"
+
+      - variables:
+          parts: "{{ cur_sel.split(' | ') }}"
+          label: "{{ parts[0] | trim if parts | length > 0 else 'Dashboard' }}"
+          path: "{{ parts[1] | trim if parts | length > 1 else '/' }}"
+          new_opt: "{{ label }} | {{ path }} | {{ time_val }}"
+          new_list: >
+            {% set ns = namespace(result=[]) %}
+            {% for item in opts %}
+              {% if item == cur_sel %}
+                {% set ns.result = ns.result + [new_opt] %}
+              {% else %}
+                {% set ns.result = ns.result + [item] %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.result }}
+
+      - service: input_select.set_options
+        data:
+          entity_id: input_select.dashboard_rotation
+          options: "{{ new_list }}"
+
+      - service: input_select.select_option
+        data:
+          entity_id: input_select.dashboard_rotation
+          option: "{{ new_opt }}"
+
+      - service: persistent_notification.create
+        data:
+          title: "Dashboard Manager"
+          message: "Display time updated to {{ time_val }}s for {{ label }}"
+
+  # Update display time using value from input_text.dashboard_manager_new_display_time
+  dashboard_rotation_update_time_from_input:
+    alias: "[Dashboard] Set display time from input"
+    mode: restart
+    sequence:
+      - variables:
+          time_val: "{{ states('input_text.dashboard_manager_new_display_time') | int(0) }}"
+      - condition: template
+        value_template: "{{ time_val > 0 }}"
+      - service: script.dashboard_rotation_update_time
+        data:
+          new_time: "{{ time_val }}"
+
+  # ---------------------------------------------------------------------------
+  # Navigation
+  # ---------------------------------------------------------------------------
+  dashboard_nav_previous:
+    alias: "[Dashboard] Previous"
+    mode: restart
+    sequence:
+      - service: input_select.select_previous
+        target:
+          entity_id: input_select.dashboard_rotation
+      - service: script.dashboard_nav_jump
+
+  dashboard_nav_next:
+    alias: "[Dashboard] Next"
+    mode: restart
+    sequence:
+      - service: input_select.select_next
+        target:
+          entity_id: input_select.dashboard_rotation
+      - service: script.dashboard_nav_jump
+
+  dashboard_nav_jump:
+    alias: "[Dashboard] Jump to selected"
+    mode: restart
+    sequence:
+      - variables:
+          raw: "{{ states('input_select.dashboard_rotation') | trim }}"
+          parts: "{{ raw.split(' | ') }}"
+          path: "{{ parts[1] | trim if parts | length > 1 else '/' }}"
+          browser_id: "{{ states('input_text.dashboard_manager_target_browser') | trim }}"
+
+      - service: browser_mod.navigate
+        data:
+          browser_id: "{{ browser_id }}"
+          path: "{{ path }}"

@@ -1,0 +1,246 @@
+# =============================================================================
+# dashboard_manager_persistence.yaml
+# File-based JSON persistence + dashboard enumeration
+#
+# HOW PERSISTENCE WORKS:
+#   shell_command.write_dashboard_rotation writes the input_select options
+#   (joined by '~~~') as plain text to /config/dashboard_rotation.txt.
+#   sensor.dashboard_rotation_text reads that file via command_line, wrapping
+#   the quote-free text in trivial JSON so it lands in an attribute.
+#   On HA start: the restore automation reads the sensor and populates
+#   input_select.dashboard_rotation. No startup race — sensor is available
+#   before integrations finish loading.
+#
+#   WHY PLAIN TEXT (not JSON): the option strings contain no double-quotes,
+#   so storing them verbatim sidesteps both shell-quoting breakage and
+#   RestrictedPython's blocked file I/O. HA's 255-char state limit doesn't
+#   apply to command_line sensor *attributes*, only to state values.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Dashboard enumeration sensor
+# Reads .storage/lovelace_dashboards to get the full list of configured
+# dashboards, then cross-references with the current rotation.
+# ---------------------------------------------------------------------------
+command_line:
+  - sensor:
+      name: lovelace_dashboards_raw
+      unique_id: lovelace_dashboards_raw
+      command: "cat /config/.storage/lovelace_dashboards"
+      scan_interval: 300
+      value_template: "ok"
+      json_attributes:
+        - data
+
+  - sensor:
+      name: dashboard_rotation_text
+      unique_id: dashboard_rotation_text
+      command: 'printf "{\"data\":\"%s\"}" "$(cat /config/dashboard_rotation.txt 2>/dev/null)"'
+      scan_interval: 3600
+      value_template: "ok"
+      json_attributes:
+        - data
+
+template:
+  - sensor:
+      # All dashboards from HA, formatted as "Title | /url_path"
+      - name: "Dashboard Manager All Dashboards"
+        unique_id: dashboard_manager_all_dashboards
+        state: >
+          {% set raw = state_attr('sensor.lovelace_dashboards_raw', 'data') %}
+          {% set items = raw['items'] if raw and 'items' in raw else [] %}
+          {{ items | length }} dashboards
+        attributes:
+          dashboards: >
+            {% set raw = state_attr('sensor.lovelace_dashboards_raw', 'data') %}
+            {% set items = raw['items'] if raw and 'items' in raw else [] %}
+            {% if items | length > 0 %}
+              {% set ns = namespace(result=[]) %}
+              {% for d in items %}
+                {% set title = d.get('title', 'Untitled') %}
+                {% set url = '/' ~ d.get('url_path', '') %}
+                {% set ns.result = ns.result + [title ~ ' | ' ~ url] %}
+              {% endfor %}
+              {{ ns.result | sort }}
+            {% else %}
+              []
+            {% endif %}
+
+      # Dashboards not yet in the rotation — populates the "add" dropdown
+      - name: "Dashboard Manager Available"
+        unique_id: dashboard_manager_available
+        state: >
+          {% set all = state_attr('sensor.dashboard_manager_all_dashboards', 'dashboards') or [] %}
+          {% set opts = state_attr('input_select.dashboard_rotation', 'options') or [] %}
+          {% set ns = namespace(paths=[], count=0) %}
+          {% for item in opts %}
+            {% set parts = item.split(' | ') %}
+            {% if parts | length >= 2 %}
+              {% set ns.paths = ns.paths + [parts[1] | trim] %}
+            {% endif %}
+          {% endfor %}
+          {% for d in all %}
+            {% set parts = d.split(' | ') %}
+            {% if parts | length >= 2 and parts[1] | trim not in ns.paths %}
+              {% set ns.count = ns.count + 1 %}
+            {% endif %}
+          {% endfor %}
+          {{ ns.count }} available
+        attributes:
+          available: >
+            {% set all = state_attr('sensor.dashboard_manager_all_dashboards', 'dashboards') or [] %}
+            {% set opts = state_attr('input_select.dashboard_rotation', 'options') or [] %}
+            {% set ns = namespace(paths=[], result=[]) %}
+            {% for item in opts %}
+              {% set parts = item.split(' | ') %}
+              {% if parts | length >= 2 %}
+                {% set ns.paths = ns.paths + [parts[1] | trim] %}
+              {% endif %}
+            {% endfor %}
+            {% for d in all %}
+              {% set parts = d.split(' | ') %}
+              {% if parts | length >= 2 and parts[1] | trim not in ns.paths %}
+                {% set ns.result = ns.result + [d] %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.result if ns.result | length > 0 else ['All dashboards in rotation'] }}
+
+automation:
+  # ---------------------------------------------------------------------------
+  # On HA start: restore rotation list from JSON store
+  # Fires after integrations load (not a delayed sleep hack).
+  # Falls back gracefully if JSON is empty (first run).
+  # ---------------------------------------------------------------------------
+  - id: dashboard_manager_restore_on_start
+    alias: "[Dashboard] Restore rotation on HA start"
+    trigger:
+      - platform: homeassistant
+        event: start
+    action:
+      - service: script.dashboard_manager_load_from_json
+    mode: single
+
+  # ---------------------------------------------------------------------------
+  # Auto-save: whenever the rotation list changes, serialize to JSON.
+  # The 2-second delay debounces rapid changes (e.g. multiple add operations).
+  # ---------------------------------------------------------------------------
+  - id: dashboard_manager_autosave
+    alias: "[Dashboard] Auto-save rotation to JSON"
+    trigger:
+      - platform: state
+        entity_id: input_select.dashboard_rotation
+    condition:
+      - condition: template
+        value_template: >
+          {{ trigger.to_state.attributes.options is defined
+             and 'No dashboards configured' not in (trigger.to_state.attributes.options | join) }}
+    action:
+      - delay:
+          seconds: 2
+      - service: script.dashboard_manager_save_to_json
+    mode: restart
+
+  # ---------------------------------------------------------------------------
+  # Refresh the available dashboards dropdown whenever the rotation changes
+  # or the lovelace_dashboards_raw sensor updates.
+  # ---------------------------------------------------------------------------
+  - id: dashboard_manager_refresh_available
+    alias: "[Dashboard] Refresh available dashboards list"
+    trigger:
+      - platform: state
+        entity_id: input_select.dashboard_rotation
+      - platform: state
+        entity_id: sensor.lovelace_dashboards_raw
+    action:
+      - service: script.dashboard_manager_update_available
+    mode: restart
+
+script:
+  # ---------------------------------------------------------------------------
+  # Load rotation list from JSON store into input_select
+  # ---------------------------------------------------------------------------
+  dashboard_manager_load_from_json:
+    alias: "[Dashboard] Load rotation from text store"
+    mode: restart
+    sequence:
+      - service: homeassistant.update_entity
+        data:
+          entity_id: sensor.dashboard_rotation_text
+
+      - delay:
+          milliseconds: 500
+
+      - variables:
+          raw: "{{ state_attr('sensor.dashboard_rotation_text', 'data') or '' }}"
+
+      - choose:
+          # If file has data, load it
+          - conditions: "{{ raw | length > 0 }}"
+            sequence:
+              - variables:
+                  dashboards: "{{ raw.split('~~~') }}"
+
+              - service: input_select.set_options
+                data:
+                  entity_id: input_select.dashboard_rotation
+                  options: "{{ dashboards }}"
+
+              - service: input_select.select_option
+                data:
+                  entity_id: input_select.dashboard_rotation
+                  option: "{{ dashboards | first }}"
+
+        # First run: file missing or empty
+        default:
+          - service: persistent_notification.create
+            data:
+              title: "Dashboard Manager"
+              message: "First run: no saved rotation found. Add dashboards to get started."
+              notification_id: dashboard_manager_first_run
+
+      - service: script.dashboard_manager_update_available
+
+  # ---------------------------------------------------------------------------
+  # Save current rotation list to JSON store
+  # ---------------------------------------------------------------------------
+  dashboard_manager_save_to_json:
+    alias: "[Dashboard] Save rotation to text store"
+    mode: restart
+    sequence:
+      - variables:
+          content: >-
+            {%- set opts = state_attr('input_select.dashboard_rotation', 'options') or [] -%}
+            {%- set ns = namespace(items=[]) -%}
+            {%- for o in opts -%}
+              {%- if 'No dashboards' not in o -%}{%- set ns.items = ns.items + [o] -%}{%- endif -%}
+            {%- endfor -%}
+            {{ ns.items | join('~~~') }}
+
+      - condition: template
+        value_template: "{{ content | length > 0 }}"
+
+      - service: shell_command.write_dashboard_rotation
+        data:
+          content: "{{ content }}"
+
+  # ---------------------------------------------------------------------------
+  # Update the available dashboards input_select
+  # ---------------------------------------------------------------------------
+  dashboard_manager_update_available:
+    alias: "[Dashboard] Update available dashboards dropdown"
+    mode: restart
+    sequence:
+      - variables:
+          available: >
+            {{ state_attr('sensor.dashboard_manager_available', 'available')
+               or ['Loading...'] }}
+
+      - service: input_select.set_options
+        data:
+          entity_id: input_select.dashboard_available
+          options: "{{ available }}"
+
+      - service: input_select.select_option
+        data:
+          entity_id: input_select.dashboard_available
+          option: "{{ available | first }}"
