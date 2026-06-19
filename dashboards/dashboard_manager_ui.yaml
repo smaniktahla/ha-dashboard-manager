@@ -145,34 +145,36 @@ views:
       # -----------------------------------------------------------------------
       # Current rotation — details & controls for selected dashboard
       # -----------------------------------------------------------------------
-      - type: markdown
-        title: Selected Dashboard
-        content: >
-          {% set sel = states('input_select.dashboard_rotation') %}
-          {% if sel and 'No dashboards' not in sel %}
-            {% set parts = sel.split(' | ') %}
-            **{{ parts[0] | trim }}**
-            Path: `{{ parts[1] | trim if parts | length > 1 else '?' }}`
-            Display time: {{ parts[2] | trim if parts | length > 2 else '30' }}s
-          {% else %}
-            _No dashboard selected_
-          {% endif %}
+      - type: vertical-stack
+        cards:
+          - type: entities
+            title: Manage Selected Dashboard
+            show_header_toggle: false
+            entities:
+              - entity: input_select.dashboard_rotation
+                name: Selected Dashboard
+            footer:
+              type: buttons
+              entities:
+                - entity: script.dashboard_nav_jump
+                  name: Jump
+                  icon: mdi:television-play
+                - entity: script.dashboard_rotation_remove
+                  name: Remove
+                  icon: mdi:delete
 
-      - type: entities
-        title: Manage Selected Dashboard
-        show_header_toggle: false
-        entities:
-          - entity: input_select.dashboard_rotation
-            name: Selected Dashboard
-        footer:
-          type: buttons
-          entities:
-            - entity: script.dashboard_nav_jump
-              name: Jump
-              icon: mdi:television-play
-            - entity: script.dashboard_rotation_remove
-              name: Remove
-              icon: mdi:delete
+          - type: markdown
+            title: Current Displayed
+            content: >
+              {% set sel = states('input_select.dashboard_rotation') %}
+              {% if sel and 'No dashboards' not in sel %}
+                {% set parts = sel.split(' | ') %}
+                **{{ parts[0] | trim }}**
+                Path: `{{ parts[1] | trim if parts | length > 1 else '?' }}`
+                Display time: {{ parts[2] | trim if parts | length > 2 else '30' }}s
+              {% else %}
+                _No dashboard selected_
+              {% endif %}
 
       # -----------------------------------------------------------------------
       # Reorder
@@ -208,13 +210,6 @@ views:
           - type: horizontal-stack
             cards:
               - type: button
-                name: Set
-                icon: mdi:clock-edit
-                tap_action:
-                  action: call-service
-                  service: script.dashboard_rotation_update_time_from_input
-
-              - type: button
                 name: 15s
                 tap_action:
                   action: call-service
@@ -241,6 +236,16 @@ views:
                   action: call-service
                   service: script.dashboard_rotation_update_time
                   service_data: {new_time: 60}
+
+          - type: button
+            name: Apply Custom Time
+            icon: mdi:clock-check
+            tap_action:
+              action: call-service
+              service: script.dashboard_rotation_update_time_from_input
+            card_mod:
+              style: |
+                ha-card { height: 56px; }
 
       # -----------------------------------------------------------------------
       # Full rotation order
