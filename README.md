@@ -1,4 +1,5 @@
 # HA Dashboard Manager
+Turn your HA browser session into a rotation of dashboards you select! Camera feeds, news, weather, smart home device status, I've even got my CPAP metrics (CPAPs are sexy, shut up). 
 
 Automatic kiosk rotation manager for Home Assistant. Rotate through dashboards on a per-dashboard timer, manage the rotation from a UI, and use a browser_mod popup for nav controls that works across all themes including HA-LCARS.
 
@@ -8,6 +9,8 @@ Automatic kiosk rotation manager for Home Assistant. Rotate through dashboards o
 - **Persistent config** — rotation list stored as plain text in `/config/dashboard_rotation.txt`; HA restores it automatically across restarts with no race condition and no 255-character limit
 - **Dashboard picker** — enumerates all dashboards configured in HA; select from a dropdown to add to rotation
 - **Nav overlay** — browser_mod popup with Prev / Play-Pause / Stop / Next; LCARS-safe (uses custom:button-card, not card-mod on buttons)
+<img width="1687" height="1206" alt="image" src="https://github.com/user-attachments/assets/23d305ce-dbff-40e7-8d5f-1f6f7a650273" />
+<img width="1651" height="1202" alt="image" src="https://github.com/user-attachments/assets/0a8ad4ff-dae8-4f34-8603-98db712cbe67" />
 
 ## Dependencies (all via HACS)
 
