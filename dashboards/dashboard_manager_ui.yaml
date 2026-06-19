@@ -196,49 +196,51 @@ views:
       # -----------------------------------------------------------------------
       # Update display time for selected dashboard
       # -----------------------------------------------------------------------
-      - type: entities
-        title: Set Display Time for Selected
-        show_header_toggle: false
-        entities:
-          - entity: input_text.dashboard_manager_new_display_time
-            name: Custom (seconds)
-
-      - type: button
-        name: Set Custom Time
-        icon: mdi:clock-edit
-        tap_action:
-          action: call-service
-          service: script.dashboard_rotation_update_time_from_input
-
-      - type: horizontal-stack
+      - type: vertical-stack
         cards:
-          - type: button
-            name: 15s
-            tap_action:
-              action: call-service
-              service: script.dashboard_rotation_update_time
-              service_data: {new_time: 15}
+          - type: entities
+            title: Set Display Time for Selected
+            show_header_toggle: false
+            entities:
+              - entity: input_text.dashboard_manager_new_display_time
+                name: Custom (seconds)
 
-          - type: button
-            name: 30s
-            tap_action:
-              action: call-service
-              service: script.dashboard_rotation_update_time
-              service_data: {new_time: 30}
+          - type: horizontal-stack
+            cards:
+              - type: button
+                name: Set
+                icon: mdi:clock-edit
+                tap_action:
+                  action: call-service
+                  service: script.dashboard_rotation_update_time_from_input
 
-          - type: button
-            name: 45s
-            tap_action:
-              action: call-service
-              service: script.dashboard_rotation_update_time
-              service_data: {new_time: 45}
+              - type: button
+                name: 15s
+                tap_action:
+                  action: call-service
+                  service: script.dashboard_rotation_update_time
+                  service_data: {new_time: 15}
 
-          - type: button
-            name: 60s
-            tap_action:
-              action: call-service
-              service: script.dashboard_rotation_update_time
-              service_data: {new_time: 60}
+              - type: button
+                name: 30s
+                tap_action:
+                  action: call-service
+                  service: script.dashboard_rotation_update_time
+                  service_data: {new_time: 30}
+
+              - type: button
+                name: 45s
+                tap_action:
+                  action: call-service
+                  service: script.dashboard_rotation_update_time
+                  service_data: {new_time: 45}
+
+              - type: button
+                name: 60s
+                tap_action:
+                  action: call-service
+                  service: script.dashboard_rotation_update_time
+                  service_data: {new_time: 60}
 
       # -----------------------------------------------------------------------
       # Full rotation order
