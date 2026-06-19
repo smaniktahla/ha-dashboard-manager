@@ -1,0 +1,14 @@
+# Backups and temp files
+*.bak
+*.save
+*.backup
+*.old
+
+# HA runtime files
+*.log
+*.db
+*.db-shm
+*.db-wal
+
+# Secrets
+secrets.yaml
