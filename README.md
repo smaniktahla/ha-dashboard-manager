@@ -64,25 +64,6 @@ After restart:
 - Add dashboards via the UI; each change auto-saves to `/config/dashboard_rotation.txt` ~2 seconds later
 - On the next boot the rotation list is restored automatically, and rotation auto-starts if it was enabled (and not paused)
 
-## Removing old static nav from dashboards
-
-If you previously added nav button cards directly to individual dashboards, remove them after installing the popup nav. The following storage-mode dashboards were found to have static nav cards:
-
-- dashboard_cameras2
-- dashboard_main
-- dashboard_opnsense
-- dashboard_temperature
-- dashboard_weather
-- lcars_images
-- live_camera_test
-- ninjamonkey_homelab
-- swimming_pool
-- system_monitors
-- ubuntu_box_monitor
-- uptime_kuma
-
-For each: open the dashboard in the HA UI editor, find the nav card (buttons calling `script.dashboard_nav_previous` / `script.dashboard_nav_next`), and delete it.
-
 ## How persistence works
 
 The rotation list lives in `input_select.dashboard_rotation` at runtime, as
@@ -119,7 +100,8 @@ shell_command:
   write_dashboard_rotation: sh -c 'printf "%s" "$0" > /config/dashboard_rotation.txt' "{{ content }}"
 ```
 
-## LCARS theme note
+## LCARS theme (Personal Note)
+I like running the LCARS theme on my kiosk display, because it's fun and I like Star Trek. 
 
 HA-LCARS 4.x (with card-mod 4.x) changed the CSS element selector from `ha-card` to `hui-card`. Any card using `card_mod: style: ha-card { height: Xpx }` to constrain button height will break — the LCARS theme's flex styles take over and stretch buttons full-height (as seen in the screenshot).
 
