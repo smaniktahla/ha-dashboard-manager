@@ -1,4 +1,5 @@
 # HA Dashboard Manager
+Turn your HA browser session into a rotation of dashboards you select! Camera feeds, news, weather, smart home device status, I've even got my CPAP metrics (CPAPs are sexy, shut up). 
 
 Automatic kiosk rotation manager for Home Assistant. Rotate through dashboards on a per-dashboard timer, and manage the rotation from a UI. Optionally includes a browser_mod popup for nav controls that works across all themes including HA-LCARS (see [Nav overlay: current status](#nav-overlay-current-status) — not enabled on the reference install).
 
@@ -8,6 +9,9 @@ Automatic kiosk rotation manager for Home Assistant. Rotate through dashboards o
 - **Persistent config** — rotation list stored as plain text in `/config/dashboard_rotation.txt`, one dashboard per line; HA restores it automatically across restarts with no race condition and no 255-character limit
 - **Dashboard picker** — enumerates all dashboards configured in HA; select from a dropdown to add to rotation
 - **Nav overlay (optional)** — browser_mod popup with Prev / Play-Pause / Stop / Next; LCARS-safe (uses custom:button-card, not card-mod on buttons)
+
+<img width="1687" height="1206" alt="image" src="https://github.com/user-attachments/assets/23d305ce-dbff-40e7-8d5f-1f6f7a650273" />
+<img width="1651" height="1202" alt="image" src="https://github.com/user-attachments/assets/0a8ad4ff-dae8-4f34-8603-98db712cbe67" />
 
 ## Dependencies (all via HACS)
 
@@ -86,25 +90,6 @@ first place). If you want the floating overlay back, the file is still here
 and should still work — just re-add it to `/config/packages/` and confirm the
 `browser_mod` / `custom:button-card` dependencies are installed.
 
-## Removing old static nav from dashboards
-
-If you previously added nav button cards directly to individual dashboards, remove them after installing the popup nav. The following storage-mode dashboards were found to have static nav cards:
-
-- dashboard_cameras2
-- dashboard_main
-- dashboard_opnsense
-- dashboard_temperature
-- dashboard_weather
-- lcars_images
-- live_camera_test
-- ninjamonkey_homelab
-- swimming_pool
-- system_monitors
-- ubuntu_box_monitor
-- uptime_kuma
-
-For each: open the dashboard in the HA UI editor, find the nav card (buttons calling `script.dashboard_nav_previous` / `script.dashboard_nav_next`), and delete it.
-
 ## How persistence works
 
 The rotation list lives in `input_select.dashboard_rotation` at runtime, as
@@ -168,7 +153,8 @@ underneath it. If you're migrating from an older setup, grep your
 are inverted (old entity being "on" meant rotation *enabled*; the new one being
 "on" means rotation *paused*).
 
-## LCARS theme note
+## LCARS theme (Personal Note)
+I like running the LCARS theme on my kiosk display, because it's fun and I like Star Trek.
 
 HA-LCARS 4.x (with card-mod 4.x) changed the CSS element selector from `ha-card` to `hui-card`. Any card using `card_mod: style: ha-card { height: Xpx }` to constrain button height will break — the LCARS theme's flex styles take over and stretch buttons full-height (as seen in the screenshot).
 
