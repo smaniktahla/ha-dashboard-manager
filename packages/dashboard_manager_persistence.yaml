@@ -4,9 +4,13 @@
 #
 # HOW PERSISTENCE WORKS:
 #   shell_command.write_dashboard_rotation writes the input_select options
-#   (joined by '~~~') as plain text to /config/dashboard_rotation.txt.
-#   sensor.dashboard_rotation_text reads that file via command_line, wrapping
-#   the quote-free text in trivial JSON so it lands in an attribute.
+#   (joined by real newlines) as plain text to /config/dashboard_rotation.txt
+#   -- one dashboard per line, so the file is readable and git-diff-friendly.
+#   sensor.dashboard_rotation_text reads that file via dashboard_manager/
+#   read_rotation.sh, which JSON-escapes the newlines as literal `\n` so the
+#   result is valid JSON (raw newline bytes inside a JSON string are not).
+#   HA's JSON decoder turns `\n` back into real newlines in the attribute,
+#   so the load script can just split on '\n' again.
 #   On HA start: the restore automation reads the sensor and populates
 #   input_select.dashboard_rotation. No startup race — sensor is available
 #   before integrations finish loading.
@@ -35,7 +39,7 @@ command_line:
   - sensor:
       name: dashboard_rotation_text
       unique_id: dashboard_rotation_text
-      command: 'printf "{\"data\":\"%s\"}" "$(cat /config/dashboard_rotation.txt 2>/dev/null)"'
+      command: "sh /config/dashboard_manager/read_rotation.sh"
       scan_interval: 3600
       value_template: "ok"
       json_attributes:
@@ -178,7 +182,7 @@ script:
           - conditions: "{{ raw | length > 0 }}"
             sequence:
               - variables:
-                  dashboards: "{{ raw.split('~~~') }}"
+                  dashboards: "{{ raw.split('\n') }}"
 
               - service: input_select.set_options
                 data:
@@ -214,7 +218,7 @@ script:
             {%- for o in opts -%}
               {%- if 'No dashboards' not in o -%}{%- set ns.items = ns.items + [o] -%}{%- endif -%}
             {%- endfor -%}
-            {{ ns.items | join('~~~') }}
+            {{ ns.items | join('\n') }}
 
       - condition: template
         value_template: "{{ content | length > 0 }}"

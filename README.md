@@ -1,13 +1,13 @@
 # HA Dashboard Manager
 
-Automatic kiosk rotation manager for Home Assistant. Rotate through dashboards on a per-dashboard timer, manage the rotation from a UI, and use a browser_mod popup for nav controls that works across all themes including HA-LCARS.
+Automatic kiosk rotation manager for Home Assistant. Rotate through dashboards on a per-dashboard timer, and manage the rotation from a UI. Optionally includes a browser_mod popup for nav controls that works across all themes including HA-LCARS (see [Nav overlay: current status](#nav-overlay-current-status) — not enabled on the reference install).
 
 ## Features
 
 - **Rotation** — timer-based, per-dashboard display times, auto-resumes after 5-minute pause, auto-starts on HA boot
-- **Persistent config** — rotation list stored as plain text in `/config/dashboard_rotation.txt`; HA restores it automatically across restarts with no race condition and no 255-character limit
+- **Persistent config** — rotation list stored as plain text in `/config/dashboard_rotation.txt`, one dashboard per line; HA restores it automatically across restarts with no race condition and no 255-character limit
 - **Dashboard picker** — enumerates all dashboards configured in HA; select from a dropdown to add to rotation
-- **Nav overlay** — browser_mod popup with Prev / Play-Pause / Stop / Next; LCARS-safe (uses custom:button-card, not card-mod on buttons)
+- **Nav overlay (optional)** — browser_mod popup with Prev / Play-Pause / Stop / Next; LCARS-safe (uses custom:button-card, not card-mod on buttons)
 
 ## Dependencies (all via HACS)
 
@@ -25,8 +25,15 @@ Copy the package files from `packages/` to `/config/packages/`:
 - `dashboard_manager_core.yaml`
 - `dashboard_manager_persistence.yaml`
 - `dashboard_manager_rotator.yaml`
-- `dashboard_manager_nav.yaml`
 - `dashboard_shell_commands.yaml`
+
+`dashboard_manager_nav.yaml` (the browser_mod popup nav overlay) is included
+for reference but **not currently deployed** on the reference install — see
+[Nav overlay: current status](#nav-overlay-current-status) below before
+adding it.
+
+Also copy `dashboard_manager/read_rotation.sh` to `/config/dashboard_manager/`
+and make it executable (`chmod +x`) — the persistence sensor shells out to it.
 
 Ensure your `configuration.yaml` includes:
 ```yaml
@@ -64,6 +71,21 @@ After restart:
 - Add dashboards via the UI; each change auto-saves to `/config/dashboard_rotation.txt` ~2 seconds later
 - On the next boot the rotation list is restored automatically, and rotation auto-starts if it was enabled (and not paused)
 
+## Nav overlay: current status
+
+`dashboard_manager_nav.yaml` implements a `browser_mod` popup with Prev /
+Play-Pause / Stop / Next buttons, meant to float over whatever dashboard is
+currently showing. On the reference install this package is **not currently
+loaded** — the `script.dashboard_nav_show` / `dashboard_nav_hide` entities
+show up as `unavailable` in HA, left over from a prior deployment. The
+decision (2026-06-02) was to rely on the Dashboard Manager UI's own transport
+controls instead, since per-dashboard nav cards rendered inconsistently across
+panel/strategy/single-iframe dashboards under some themes (see the LCARS note
+below for the specific CSS conflict that motivated `custom:button-card` in the
+first place). If you want the floating overlay back, the file is still here
+and should still work — just re-add it to `/config/packages/` and confirm the
+`browser_mod` / `custom:button-card` dependencies are installed.
+
 ## Removing old static nav from dashboards
 
 If you previously added nav button cards directly to individual dashboards, remove them after installing the popup nav. The following storage-mode dashboards were found to have static nav cards:
@@ -93,16 +115,24 @@ Cameras | /live-camera-test/cameras | 30
 ```
 
 These are persisted to disk as plain text in `/config/dashboard_rotation.txt`,
-with options joined by a `~~~` delimiter:
+**one dashboard per line** — readable, and `git diff`-friendly if you keep
+your own copy under version control:
 
 ```
-Cameras | /live-camera-test/cameras | 30~~~News | /dashboard-news/0 | 60
+Cameras | /live-camera-test/cameras | 30
+News | /dashboard-news/0 | 60
 ```
+
+An earlier version of this joined all entries onto a single line with a
+`~~~` delimiter instead of real newlines, to dodge a JSON-encoding problem
+(see below). That traded away human/git readability for no real benefit —
+`dashboard_manager/read_rotation.sh` now does the JSON-safe encoding instead,
+so the on-disk file can stay one-entry-per-line.
 
 | Direction | Mechanism |
 |---|---|
-| **Save** | The `dashboard_manager_autosave` automation fires ~2 s after the `input_select` changes, calling `script.dashboard_manager_save_to_json`, which joins the options with `~~~` and writes them via `shell_command.write_dashboard_rotation`. |
-| **Load** | `sensor.dashboard_rotation_text` reads the file (wrapping the text in trivial JSON so it lands in an attribute, sidestepping HA's 255-char *state* limit). On the HA `start` event, `script.dashboard_manager_load_from_json` reads that attribute, splits on `~~~`, and repopulates the `input_select`. |
+| **Save** | The `dashboard_manager_autosave` automation fires ~2 s after the `input_select` changes, calling `script.dashboard_manager_save_to_json`, which joins the options with a real newline (`\n`) and writes them via `shell_command.write_dashboard_rotation`. |
+| **Load** | `sensor.dashboard_rotation_text` runs `dashboard_manager/read_rotation.sh`, which reads the file line-by-line and builds `{"data": "..."}` with each line break emitted as a literal two-character `\n` escape — real newline bytes can't go raw inside a JSON string, but HA's JSON decoder turns `\n` right back into a real newline once it parses the attribute. On the HA `start` event, `script.dashboard_manager_load_from_json` reads that attribute, splits on `\n`, and repopulates the `input_select`. |
 
 **Why plain text, not JSON?** The option strings contain no double-quotes, so
 storing them verbatim avoids two traps that broke earlier JSON-based attempts:
@@ -118,6 +148,25 @@ your `/config/packages/`):
 shell_command:
   write_dashboard_rotation: sh -c 'printf "%s" "$0" > /config/dashboard_rotation.txt' "{{ content }}"
 ```
+
+`read_rotation.sh` uses only `sh` builtins (`read`/`printf`) — no `sed`/`awk`/
+`tr` — since the HA Core container isn't guaranteed to have them installed.
+
+## Pausing rotation from other automations
+
+If you want another automation (a camera alert popup, a doorbell announcement,
+etc.) to pause rotation while it does something and resume it afterward, target
+**`input_boolean.dashboard_rotation_paused`** — turn it `on` to pause, `off` to
+resume. This is the only supported pause mechanism; earlier iterations of this
+project used a different, since-removed `input_boolean` for the same purpose,
+and automations still pointed at that dead entity fail silently (HA logs a
+`WARNING: Referenced entities ... missing or not currently available` but
+otherwise no error) — the popup still shows, but rotation never actually pauses
+underneath it. If you're migrating from an older setup, grep your
+`automations.yaml` for the old entity name and repoint it at
+`dashboard_rotation_paused`, flipping `turn_on`/`turn_off` since the semantics
+are inverted (old entity being "on" meant rotation *enabled*; the new one being
+"on" means rotation *paused*).
 
 ## LCARS theme note
 
