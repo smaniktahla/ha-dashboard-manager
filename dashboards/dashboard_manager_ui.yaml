@@ -163,6 +163,40 @@ views:
                   name: Remove
                   icon: mdi:delete
 
+          - type: custom:button-card
+            entity: input_select.dashboard_rotation
+            name: Nav Bar on This Dashboard
+            show_name: true
+            show_icon: true
+            show_state: false
+            icon: >
+              [[[
+                const parts = (entity.state || '').split(' | ');
+                const show = parts.length > 3 ? parts[3].trim().toLowerCase() !== 'false' : true;
+                return show ? 'mdi:toggle-switch' : 'mdi:toggle-switch-off-outline';
+              ]]]
+            tap_action:
+              action: call-service
+              service: script.dashboard_rotation_toggle_nav
+            styles:
+              card:
+                - display: flex
+                - flex-direction: row
+                - justify-content: space-between
+                - align-items: center
+                - padding: 0 16px
+                - height: 56px
+              name:
+                - font-size: 14px
+              icon:
+                - width: 40px
+                - color: >
+                    [[[
+                      const parts = (entity.state || '').split(' | ');
+                      const show = parts.length > 3 ? parts[3].trim().toLowerCase() !== 'false' : true;
+                      return show ? '#22c55e' : '#64748b';
+                    ]]]
+
           - type: markdown
             title: Current Displayed
             content: >

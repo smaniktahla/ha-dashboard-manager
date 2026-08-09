@@ -1,0 +1,223 @@
+# =============================================================================
+# navbar_card_snippet.yaml
+#
+# The single source of truth for the nav overlay, using the community
+# `navbar-card` (https://github.com/joseluis9595/lovelace-navbar-card) instead
+# of a hand-rolled position:fixed card_mod hack or a browser_mod popup.
+#
+# WHY NOT A PER-DASHBOARD position:fixed CARD (the old approach)?
+#   `position: fixed` only centers relative to the true viewport if NO
+#   ancestor element has its own CSS transform. Any dashboard whose view uses
+#   a grid/layout wrapper card (custom:grid-layout, custom:layout-card, or a
+#   `type: sections` view) becomes a new containing block for that fixed
+#   element, so the bar drifts, shrinks, or overlaps content depending on
+#   that specific dashboard's internal layout. It "worked" on some dashboards
+#   and silently broke on others -- not a fixable CSS tweak, a structural
+#   dead end.
+#
+# WHY NOT A browser_mod POPUP (the original dashboard_manager_nav.yaml)?
+#   Tested extensively: the popup mechanism itself works fine (opens,
+#   dismisses, addresses the right browser), but custom card content
+#   (custom:button-card, stock `button`, `tile`) rendered inside a
+#   browser_mod popup collapsed to zero height on this stack -- title bar
+#   shows, body is empty. Only `markdown` rendered. That's a specific
+#   incompatibility between whatever card creation path browser_mod's
+#   popups use and this HA/card-mod/theme combination, not something you can
+#   route around with more CSS. Confirmed by testing three unrelated card
+#   types side-by-side.
+#
+# WHY navbar-card:
+#   It's a real Lovelace card you add directly to a dashboard's own view
+#   (immune to the containing-block problem above since it isn't relying on
+#   position:fixed escaping a wrapper), it has its own auto-padding, and it
+#   works out of the box.
+#
+# DEPENDENCIES:
+#   - navbar-card (HACS "Frontend" category, or manually copy navbar-card.js
+#     to <config>/www/ and register it as a Lovelace resource with URL
+#     `/local/navbar-card.js`, type `module`)
+#
+# HOW TO USE:
+#   Paste the card below into any dashboard's view `cards:` list. It's
+#   identical everywhere -- no per-dashboard editing needed. Previous/Next
+#   read the SAME `input_select.dashboard_rotation` list that Dashboard
+#   Manager already maintains (see packages/dashboard_manager_core.yaml),
+#   so the nav bar always matches whatever's actually in rotation.
+#
+#   Change `/dashboard-manager/0` in the last route to wherever your own
+#   Dashboard Manager UI dashboard's URL is if it differs.
+#
+# CAVEATS DISCOVERED WHILE ROLLING THIS OUT ACROSS ~15 DASHBOARDS:
+#   - Panel views (`panel: true`, or the newer `type: panel` view schema)
+#     only accept ONE top-level card. If your view already has a card,
+#     wrap both the existing card and this navbar-card in a single
+#     `type: vertical-stack` -- see the "Panel view" example below.
+#   - `type: sections` views (HA 2024.x+) don't use a flat `cards:` list at
+#     all. Add this card into any one of the view's `sections[].cards`
+#     lists instead -- see the "Sections view" example below.
+#   - Before adding this to a dashboard that used to have an OLD nav card,
+#     check for nested `custom:mod-card` entries recursively, not just at
+#     the top level of `cards:` -- one dashboard here had one buried three
+#     `vertical-stack` levels deep, invisible to a naive top-level scan, and
+#     it kept rendering alongside the new one until found and removed.
+#
+# PER-DASHBOARD SHOW/HIDE:
+#   Every route's `hidden` field reads the CURRENT dashboard's own entry in
+#   the shared rotation list (matched by URL path prefix) and checks the
+#   optional 4th pipe-delimited field:
+#     Label | /path | seconds | show_controls
+#   Missing 4th field == shown (backwards compatible with existing 3-field
+#   entries). Toggle it from the Dashboard Manager UI's "Nav Bar on This
+#   Dashboard" switch, which calls script.dashboard_rotation_toggle_nav.
+# =============================================================================
+
+type: custom:navbar-card
+styles: |
+  .navbar-card {
+    --navbar-background-color: rgba(30, 41, 59, 0.95);
+  }
+desktop:
+  position: bottom
+  show_labels: true
+routes:
+  - icon: mdi:skip-previous
+    label: Previous
+    icon_color: "#64748b"
+    hidden: &hidden_on_this_dashboard |-
+      [[[
+        const opts = (hass.states['input_select.dashboard_rotation']?.attributes?.options) || [];
+        const path = window.location.pathname;
+        for (const o of opts) {
+          const p = (o.split(' | ')[1] || '').trim();
+          if (p && path.startsWith(p)) {
+            const parts = o.split(' | ');
+            const show = parts.length > 3 ? (parts[3] || '').trim().toLowerCase() !== 'false' : true;
+            return !show;
+          }
+        }
+        return false;
+      ]]]
+    tap_action:
+      action: custom-js-action
+      code: |-
+        [[[
+          const opts = (hass.states['input_select.dashboard_rotation']?.attributes?.options) || [];
+          if (!opts.length) return;
+          const paths = opts.map(o => (o.split(' | ')[1] || '').trim()).filter(p => p);
+          if (!paths.length) return;
+          let idx = paths.findIndex(p => window.location.pathname.startsWith(p));
+          if (idx === -1) idx = 0;
+          const target = paths[(idx - 1 + paths.length) % paths.length];
+          window.location.assign(target);
+        ]]]
+
+  - icon: mdi:play-pause
+    label: Play/Pause
+    # Gray while stopped (dashboard_rotation_enabled off), green while
+    # actively rotating, yellow while paused. Tapping while stopped restarts
+    # rotation properly (script.dashboard_rotation_start) instead of just
+    # toggling `paused`, which by itself can't bring rotation back once
+    # `enabled` is off -- Stop and Play/Pause used to operate on separate,
+    # unsynchronized state, so tapping Play after Stop looked like it did
+    # nothing (it just flipped `paused` on/off while `enabled` stayed off).
+    icon_color: |-
+      [[[
+        const en = states['input_boolean.dashboard_rotation_enabled']?.state;
+        const pa = states['input_boolean.dashboard_rotation_paused']?.state;
+        if (en !== 'on') return '#64748b';
+        return pa === 'on' ? '#eab308' : '#22c55e';
+      ]]]
+    hidden: *hidden_on_this_dashboard
+    tap_action:
+      action: custom-js-action
+      code: |-
+        [[[
+          if (hass.states['input_boolean.dashboard_rotation_enabled']?.state !== 'on') {
+            hass.callService('script', 'dashboard_rotation_start');
+          } else {
+            hass.callService('input_boolean', 'toggle', {entity_id: 'input_boolean.dashboard_rotation_paused'});
+          }
+        ]]]
+
+  - icon: mdi:skip-next
+    label: Next
+    icon_color: "#64748b"
+    hidden: *hidden_on_this_dashboard
+    tap_action:
+      action: custom-js-action
+      code: |-
+        [[[
+          const opts = (hass.states['input_select.dashboard_rotation']?.attributes?.options) || [];
+          if (!opts.length) return;
+          const paths = opts.map(o => (o.split(' | ')[1] || '').trim()).filter(p => p);
+          if (!paths.length) return;
+          let idx = paths.findIndex(p => window.location.pathname.startsWith(p));
+          if (idx === -1) idx = 0;
+          const target = paths[(idx + 1) % paths.length];
+          window.location.assign(target);
+        ]]]
+
+  - icon: mdi:stop-circle
+    label: Stop
+    icon_color: "#dc2626"
+    hidden: *hidden_on_this_dashboard
+    tap_action:
+      action: call-service
+      service: script.dashboard_rotation_stop
+
+  - icon: mdi:timer-outline
+    # Shows "Stopped" while dashboard_rotation_enabled is off (checked first,
+    # so a leftover active auto-resume timer from an unrelated earlier pause
+    # can't be mistaken for a currently-running countdown). Otherwise shows
+    # the 30s rotation countdown normally, or falls back to the 5-min
+    # auto-resume countdown while paused (see dashboard_manager_rotator.yaml
+    # -- pausing calls timer.pause, not timer.cancel, so Play/Pause resumes
+    # from wherever the countdown was rather than restarting it).
+    label: |-
+      [[[
+        const enabled = states['input_boolean.dashboard_rotation_enabled'];
+        if (enabled && enabled.state !== 'on') return 'Stopped';
+        const rot = states['timer.dashboard_rotation_timer'];
+        const resume = states['timer.dashboard_autoresume_timer'];
+        const fmt = (t) => {
+          const secs = Math.max(0, Math.round((new Date(t.attributes.finishes_at) - new Date())/1000));
+          if (secs >= 60) return Math.floor(secs / 60) + 'm ' + (secs % 60) + 's';
+          return secs + 's';
+        };
+        if (rot && rot.state === 'active') return fmt(rot);
+        if (resume && resume.state === 'active') return fmt(resume);
+        if (!rot) return '';
+        return rot.state;
+      ]]]
+    icon_color: "#94a3b8"
+    hidden: *hidden_on_this_dashboard
+    tap_action:
+      action: none
+
+  - url: /dashboard-manager/0 # <- change to your own Dashboard Manager URL
+    icon: mdi:monitor-dashboard
+    label: Manager
+    icon_color: "#3b82f6"
+    hidden: *hidden_on_this_dashboard
+
+# -----------------------------------------------------------------------------
+# Panel view example: wrap the existing card(s) AND this navbar-card together
+# so the view still only has one top-level card.
+#
+# cards:
+#   - type: vertical-stack
+#     cards:
+#       - type: picture   # whatever was already here
+#         image: /local/my-image.jpg
+#       - type: custom:navbar-card
+#         ...             # (the full card above)
+#
+# Sections view example: drop it into any one section's own cards list.
+#
+# sections:
+#   - cards:
+#       - type: heading
+#         heading: Something
+#       - type: custom:navbar-card
+#         ...             # (the full card above)
+# -----------------------------------------------------------------------------
