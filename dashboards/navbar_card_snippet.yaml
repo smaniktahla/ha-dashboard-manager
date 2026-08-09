@@ -113,14 +113,31 @@ routes:
 
   - icon: mdi:play-pause
     label: Play/Pause
+    # Gray while stopped (dashboard_rotation_enabled off), green while
+    # actively rotating, yellow while paused. Tapping while stopped restarts
+    # rotation properly (script.dashboard_rotation_start) instead of just
+    # toggling `paused`, which by itself can't bring rotation back once
+    # `enabled` is off -- Stop and Play/Pause used to operate on separate,
+    # unsynchronized state, so tapping Play after Stop looked like it did
+    # nothing (it just flipped `paused` on/off while `enabled` stayed off).
     icon_color: |-
-      [[[ return states['input_boolean.dashboard_rotation_paused']?.state === 'on' ? '#eab308' : '#22c55e'; ]]]
+      [[[
+        const en = states['input_boolean.dashboard_rotation_enabled']?.state;
+        const pa = states['input_boolean.dashboard_rotation_paused']?.state;
+        if (en !== 'on') return '#64748b';
+        return pa === 'on' ? '#eab308' : '#22c55e';
+      ]]]
     hidden: *hidden_on_this_dashboard
     tap_action:
-      action: call-service
-      service: input_boolean.toggle
-      target:
-        entity_id: input_boolean.dashboard_rotation_paused
+      action: custom-js-action
+      code: |-
+        [[[
+          if (hass.states['input_boolean.dashboard_rotation_enabled']?.state !== 'on') {
+            hass.callService('script', 'dashboard_rotation_start');
+          } else {
+            hass.callService('input_boolean', 'toggle', {entity_id: 'input_boolean.dashboard_rotation_paused'});
+          }
+        ]]]
 
   - icon: mdi:skip-next
     label: Next
@@ -149,12 +166,17 @@ routes:
       service: script.dashboard_rotation_stop
 
   - icon: mdi:timer-outline
-    # Shows the 30s rotation countdown normally, or falls back to the 5-min
+    # Shows "Stopped" while dashboard_rotation_enabled is off (checked first,
+    # so a leftover active auto-resume timer from an unrelated earlier pause
+    # can't be mistaken for a currently-running countdown). Otherwise shows
+    # the 30s rotation countdown normally, or falls back to the 5-min
     # auto-resume countdown while paused (see dashboard_manager_rotator.yaml
     # -- pausing calls timer.pause, not timer.cancel, so Play/Pause resumes
     # from wherever the countdown was rather than restarting it).
     label: |-
       [[[
+        const enabled = states['input_boolean.dashboard_rotation_enabled'];
+        if (enabled && enabled.state !== 'on') return 'Stopped';
         const rot = states['timer.dashboard_rotation_timer'];
         const resume = states['timer.dashboard_autoresume_timer'];
         const fmt = (t) => {
