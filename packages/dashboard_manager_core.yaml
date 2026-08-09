@@ -57,15 +57,32 @@ script:
     sequence:
       - variables:
           label: "{{ states('input_text.dashboard_manager_new_label') | trim }}"
-          path: "{{ states('input_text.dashboard_manager_new_path') | trim }}"
+          raw_path: "{{ states('input_text.dashboard_manager_new_path') | trim }}"
+          # Accept paths typed without a leading slash instead of silently
+          # rejecting them - this used to fail with zero feedback.
+          path: "{{ raw_path if (raw_path | length == 0 or raw_path.startswith('/')) else '/' ~ raw_path }}"
           display_time: "{{ states('input_text.dashboard_manager_new_display_time') | trim }}"
           opts: "{{ state_attr('input_select.dashboard_rotation', 'options') or [] }}"
 
-      - condition: template
-        value_template: "{{ path | length > 0 and path.startswith('/') }}"
+      - if:
+          - condition: template
+            value_template: "{{ path | length == 0 }}"
+        then:
+          - service: persistent_notification.create
+            data:
+              title: "Dashboard Manager"
+              message: "Add failed: path is required."
+          - stop: "no path entered"
 
-      - condition: template
-        value_template: "{{ display_time | int(0) > 0 }}"
+      - if:
+          - condition: template
+            value_template: "{{ display_time | int(0) <= 0 }}"
+        then:
+          - service: persistent_notification.create
+            data:
+              title: "Dashboard Manager"
+              message: "Add failed: display time must be a positive number of seconds (got '{{ display_time }}')."
+          - stop: "invalid display time"
 
       - variables:
           new_opt: "{{ label if label | length > 0 else 'Dashboard' }} | {{ path }} | {{ display_time }}"
@@ -99,7 +116,7 @@ script:
       - service: persistent_notification.create
         data:
           title: "Dashboard Manager"
-          message: "Added: {{ label if label | length > 0 else path }}"
+          message: "Added: {{ label if label | length > 0 else path }} ({{ path }})"
 
   # ---------------------------------------------------------------------------
   # Add dashboard selected from the available list
