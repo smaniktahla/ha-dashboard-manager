@@ -125,7 +125,10 @@ automation:
         entity_id: input_boolean.dashboard_rotation_paused
         to: "on"
     action:
-      - service: timer.cancel
+      # timer.pause (not timer.cancel) preserves the remaining time so
+      # resuming continues the same 30s window instead of restarting it.
+      - service: timer.pause
+        continue_on_error: true
         target:
           entity_id: timer.dashboard_rotation_timer
       - service: timer.start
@@ -147,7 +150,20 @@ automation:
       - service: timer.cancel
         target:
           entity_id: timer.dashboard_autoresume_timer
-      - service: script.dashboard_rotation_schedule_next
+      # timer.start with no duration resumes a paused timer from its
+      # remaining time. Falls back to a fresh 30s window if for some
+      # reason the timer wasn't actually paused (e.g. edge-case above).
+      - choose:
+          - conditions:
+              - condition: state
+                entity_id: timer.dashboard_rotation_timer
+                state: "paused"
+            sequence:
+              - service: timer.start
+                target:
+                  entity_id: timer.dashboard_rotation_timer
+        default:
+          - service: script.dashboard_rotation_schedule_next
     mode: single
 
   - id: dashboard_rotation_autoresume

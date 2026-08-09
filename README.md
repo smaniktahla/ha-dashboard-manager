@@ -1,14 +1,14 @@
 # HA Dashboard Manager
 Turn your HA browser session into a rotation of dashboards you select! Camera feeds, news, weather, smart home device status, I've even got my CPAP metrics (CPAPs are sexy, shut up). 
 
-Automatic kiosk rotation manager for Home Assistant. Rotate through dashboards on a per-dashboard timer, and manage the rotation from a UI. Optionally includes a browser_mod popup for nav controls that works across all themes including HA-LCARS (see [Nav overlay: current status](#nav-overlay-current-status) — not enabled on the reference install).
+Automatic kiosk rotation manager for Home Assistant. Rotate through dashboards on a per-dashboard timer, and manage the rotation from a UI. Includes a single, reusable nav overlay ([`navbar-card`](https://github.com/joseluis9595/lovelace-navbar-card)) with Previous / Play-Pause / Stop / Next / a live countdown / a jump-to-manager button — the exact same card pasted into every dashboard, toggleable per-dashboard from the UI. See [Nav overlay](#nav-overlay) for why this replaced two earlier approaches that didn't hold up.
 
 ## Features
 
-- **Rotation** — timer-based, per-dashboard display times, auto-resumes after 5-minute pause, auto-starts on HA boot
+- **Rotation** — timer-based, per-dashboard display times, auto-resumes after 5-minute pause (actually resumes the interrupted countdown, not a fresh one — see [Pausing rotation](#pausing-rotation-from-other-automations)), auto-starts on HA boot
 - **Persistent config** — rotation list stored as plain text in `/config/dashboard_rotation.txt`, one dashboard per line; HA restores it automatically across restarts with no race condition and no 255-character limit
-- **Dashboard picker** — enumerates all dashboards configured in HA; select from a dropdown to add to rotation
-- **Nav overlay (optional)** — browser_mod popup with Prev / Play-Pause / Stop / Next; LCARS-safe (uses custom:button-card, not card-mod on buttons)
+- **Dashboard picker** — enumerates all dashboards configured in HA; select from a dropdown to add to rotation. Only sees storage-mode (UI-created) dashboards — YAML-mode dashboards declared under `lovelace.dashboards` in `configuration.yaml` (like this one, and House Floorplan-style dashboards) don't show up in that dropdown at all, since they're never written to `.storage/lovelace_dashboards`, which is what the enumeration sensor reads. Add those via the "Add Dashboard Manually" form instead.
+- **Nav overlay** — `navbar-card`, one identical block pasted into every dashboard; Previous/Next read the same rotation list Dashboard Manager maintains, so there's no separate list to keep in sync. Toggle visibility per-dashboard from the "Nav Bar on This Dashboard" switch.
 
 <img width="1687" height="1206" alt="image" src="https://github.com/user-attachments/assets/23d305ce-dbff-40e7-8d5f-1f6f7a650273" />
 <img width="1651" height="1202" alt="image" src="https://github.com/user-attachments/assets/0a8ad4ff-dae8-4f34-8603-98db712cbe67" />
@@ -17,9 +17,10 @@ Automatic kiosk rotation manager for Home Assistant. Rotate through dashboards o
 
 | Component | Purpose |
 |---|---|
-| browser_mod | Navigate kiosk browser, show popup overlay |
+| browser_mod | Navigate the kiosk browser for automatic (timer-driven) rotation |
 | card-mod | UI card styling |
-| custom:button-card | Nav overlay buttons (LCARS-safe sizing) |
+| navbar-card | Nav overlay — see [dashboards/navbar_card_snippet.yaml](dashboards/navbar_card_snippet.yaml) |
+| custom:button-card | Toggle switch on the Dashboard Manager UI itself |
 
 ## Installation
 
@@ -30,11 +31,6 @@ Copy the package files from `packages/` to `/config/packages/`:
 - `dashboard_manager_persistence.yaml`
 - `dashboard_manager_rotator.yaml`
 - `dashboard_shell_commands.yaml`
-
-`dashboard_manager_nav.yaml` (the browser_mod popup nav overlay) is included
-for reference but **not currently deployed** on the reference install — see
-[Nav overlay: current status](#nav-overlay-current-status) below before
-adding it.
 
 Also copy `dashboard_manager/read_rotation.sh` to `/config/dashboard_manager/`
 and make it executable (`chmod +x`) — the persistence sensor shells out to it.
@@ -67,28 +63,29 @@ The dashboard enumeration sensor reads `/config/.storage/lovelace_dashboards` vi
 
 ### 4. Set your browser ID
 
-In the Dashboard Manager UI, set **Target Browser ID** to match your kiosk's browser_mod ID (default: `kitchen_kiosk`). Find your browser's ID at **Settings → Devices & Services → Browser Mod**.
+In the Dashboard Manager UI, set **Target Browser ID** to match your kiosk's browser_mod ID (default: `kitchen_kiosk`). This is only used for the *automatic* timer-driven rotation on that one unattended display — it has nothing to do with the nav overlay below, which controls whichever screen you're looking at directly. Find your browser's ID at **Settings → Devices & Services → Browser Mod**.
 
-### 5. Restart Home Assistant
+### 5. Add the nav overlay to your dashboards
+
+Install `navbar-card` via HACS (or manually — copy `navbar-card.js` to `<config>/www/` and register it as a Lovelace resource with URL `/local/navbar-card.js`, type `module`).
+
+Paste the card from [`dashboards/navbar_card_snippet.yaml`](dashboards/navbar_card_snippet.yaml) into every dashboard's view `cards:` list. It's the identical block everywhere — nothing to customize per-dashboard except changing the last route's `url` if your Dashboard Manager page lives somewhere other than `/dashboard-manager/0`. Read the comments at the top of that file first — panel views and `type: sections` views need small structural adjustments (wrap-in-a-vertical-stack, or add to a section instead of the top-level `cards:` list) that are explained and shown there.
+
+### 6. Restart Home Assistant
 
 After restart:
 - Add dashboards via the UI; each change auto-saves to `/config/dashboard_rotation.txt` ~2 seconds later
 - On the next boot the rotation list is restored automatically, and rotation auto-starts if it was enabled (and not paused)
 
-## Nav overlay: current status
+## Nav overlay
 
-`dashboard_manager_nav.yaml` implements a `browser_mod` popup with Prev /
-Play-Pause / Stop / Next buttons, meant to float over whatever dashboard is
-currently showing. On the reference install this package is **not currently
-loaded** — the `script.dashboard_nav_show` / `dashboard_nav_hide` entities
-show up as `unavailable` in HA, left over from a prior deployment. The
-decision (2026-06-02) was to rely on the Dashboard Manager UI's own transport
-controls instead, since per-dashboard nav cards rendered inconsistently across
-panel/strategy/single-iframe dashboards under some themes (see the LCARS note
-below for the specific CSS conflict that motivated `custom:button-card` in the
-first place). If you want the floating overlay back, the file is still here
-and should still work — just re-add it to `/config/packages/` and confirm the
-`browser_mod` / `custom:button-card` dependencies are installed.
+Two earlier approaches to a floating/global nav overlay didn't hold up under real testing, in case you're tempted to reach for either one instead of `navbar-card`:
+
+**A hand-rolled `position: fixed` card_mod overlay pasted into each dashboard.** `position: fixed` only centers against the true viewport if no ancestor element has its own CSS transform. Any dashboard whose view wraps its cards in a layout card (`custom:grid-layout`, `custom:layout-card`) or uses a `type: sections` view becomes a new containing block for that fixed element — the bar drifts, shrinks, or overlaps content depending on that specific dashboard's internal layout. It "worked" on some dashboards and silently broke on others. Not a CSS tweak away from fixed — a structural dead end, because the fragility is inherent to which dashboards happen to use a layout wrapper, which changes over time as you add dashboards.
+
+**`dashboard_manager_nav.yaml`, a `browser_mod` popup with Prev/Play-Pause/Stop/Next.** The popup mechanism itself works — opens, dismisses, addresses the right browser. But custom card content (`custom:button-card`, stock `button`, `tile`) rendered *inside* a browser_mod popup collapsed to zero height on testing — title bar shows, body stays empty. Only `markdown` rendered correctly in that same slot. That's a specific incompatibility between whatever card-creation path browser_mod's popups use and some combination of HA/card-mod/theme versions, not something fixable with more styling. Confirmed by testing three unrelated card implementations side-by-side, all failing identically. The file is kept in git history for reference but removed from `packages/` — don't re-add it without expecting to hit the same wall, unless something upstream has since changed.
+
+`navbar-card` sidesteps both problems: it's a real card living in a dashboard's own view (no `position: fixed` escaping a wrapper needed at all, so the containing-block problem above doesn't apply), and it renders its own content directly rather than going through browser_mod's popup card-creation path.
 
 ## How persistence works
 
@@ -152,6 +149,20 @@ underneath it. If you're migrating from an older setup, grep your
 `dashboard_rotation_paused`, flipping `turn_on`/`turn_off` since the semantics
 are inverted (old entity being "on" meant rotation *enabled*; the new one being
 "on" means rotation *paused*).
+
+Pausing calls `timer.pause` (not `timer.cancel`) on `timer.dashboard_rotation_timer`, which
+preserves the remaining time; unpausing calls `timer.start` with no `duration`, which HA's
+timer domain resumes from wherever it was paused rather than restarting a fresh window. If
+you're pausing/resuming this timer from your own scripts directly (instead of going through
+`input_boolean.dashboard_rotation_paused`), use the same pair of calls to get the same
+behavior — `timer.cancel` + a fresh `timer.start` will restart the countdown instead of
+resuming it.
+
+Separately, `input_boolean.dashboard_rotation_enabled` is the master on/off switch (distinct
+from *paused*) — `script.dashboard_rotation_stop` turns rotation off entirely and cancels the
+timer; nothing auto-restarts it until `script.dashboard_rotation_start` runs again. If your
+nav overlay's countdown pill is stuck on `idle` and pause/resume doesn't seem to do anything,
+check this boolean before assuming something's broken.
 
 ## LCARS theme (Personal Note)
 I like running the LCARS theme on my kiosk display, because it's fun and I like Star Trek.
