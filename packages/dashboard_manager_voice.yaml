@@ -1,0 +1,256 @@
+# =============================================================================
+# dashboard_manager_voice.yaml
+# Show a dashboard on demand (voice assistant, automations), then hand control
+# back to the rotation.
+#
+# Reuses the existing rotation contract: pausing goes through
+# input_boolean.dashboard_rotation_paused, resuming through
+# script.dashboard_rotation_resume (unpause + advance to the next dashboard),
+# so the interrupted dashboard's leftover countdown doesn't leave the requested
+# view lingering. The 5-minute auto-resume timer remains the safety net if this
+# script is killed mid-hold.
+#
+# Voice topics: each rotation entry may carry a 5th pipe field of comma-
+# separated topics ("Pool | /swimming-pool | 30 | true | pool, swimming").
+# A topic belongs to at most one dashboard. When something fires the
+# `needle_voice_utterance` event (or calls script.dashboard_show_for_utterance),
+# the single best-matching dashboard is shown via dashboard_show.
+# =============================================================================
+
+input_text:
+  dashboard_manager_topics:
+    name: "Dashboard voice topics (comma-separated)"
+    max: 255
+    initial: ""
+    icon: mdi:microphone-message
+
+script:
+  dashboard_show:
+    alias: "[Dashboard] Show a dashboard, then resume rotation"
+    description: >
+      Navigate the kiosk to a dashboard by rotation-list name or by path, hold
+      it for hold_seconds, then resume rotation.
+    mode: restart
+    fields:
+      dashboard:
+        description: >
+          Name as shown in the rotation list (case-insensitive substring, e.g.
+          "weather") or a path starting with "/" (e.g. /dashboard-weather/0).
+        example: weather
+      hold_seconds:
+        description: Seconds to hold before resuming rotation.
+        default: 45
+        example: 45
+    sequence:
+      - variables:
+          query: "{{ dashboard | default('') | string | trim | lower }}"
+          hold: "{{ hold_seconds | default(45) | int(45) }}"
+          browser_id: "{{ states('input_text.dashboard_manager_target_browser') | trim }}"
+          opts: "{{ state_attr('input_select.dashboard_rotation', 'options') or [] }}"
+          by_name: >
+            {% set ns = namespace(path='') %}
+            {% for o in opts %}
+              {% set p = o.split(' | ') %}
+              {% if ns.path == '' and p | length > 1 and query != '' and query in p[0] | lower %}
+                {% set ns.path = p[1] | trim %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.path }}
+          path: >
+            {{ query if query.startswith('/') else (by_name | trim) }}
+
+      # Unknown name and not a path: do nothing rather than blank the kiosk.
+      - condition: template
+        value_template: "{{ path | length > 0 and browser_id | length > 0 }}"
+
+      - service: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.dashboard_rotation_paused
+      - service: browser_mod.navigate
+        data:
+          browser_id: "{{ browser_id }}"
+          path: "{{ path }}"
+      - delay:
+          seconds: "{{ hold }}"
+      # If someone already resumed during the hold (nav overlay Play), don't
+      # advance a second time.
+      - condition: state
+        entity_id: input_boolean.dashboard_rotation_paused
+        state: "on"
+      - service: script.dashboard_rotation_resume
+
+  # ---------------------------------------------------------------------------
+  # Set voice topics on the selected dashboard (one dashboard per topic)
+  # ---------------------------------------------------------------------------
+  dashboard_rotation_set_topics:
+    alias: "[Dashboard] Set voice topics for selected"
+    mode: restart
+    sequence:
+      - variables:
+          cur_sel: "{{ states('input_select.dashboard_rotation') | trim }}"
+          opts: "{{ state_attr('input_select.dashboard_rotation', 'options') or [] }}"
+          raw: "{{ states('input_text.dashboard_manager_topics') }}"
+
+      - condition: template
+        value_template: "{{ cur_sel | length > 0 and opts | length > 0 and 'No dashboards' not in cur_sel }}"
+
+      - variables:
+          parts: "{{ cur_sel.split(' | ') }}"
+          label: "{{ parts[0] | trim if parts | length > 0 else 'Dashboard' }}"
+          path: "{{ parts[1] | trim if parts | length > 1 else '/' }}"
+          time_val: "{{ parts[2] | trim if parts | length > 2 else '30' }}"
+          show_flag: "{{ parts[3] | trim if parts | length > 3 else 'true' }}"
+          # Lowercase, letters/digits/spaces only, de-duplicated.
+          topics: >
+            {% set ns = namespace(t=[]) %}
+            {% for x in raw.split(',') %}
+              {% set c = x | lower | regex_replace('[^a-z0-9 ]', '') | regex_replace(' +', ' ') | trim %}
+              {% if c != '' and c not in ns.t %}{% set ns.t = ns.t + [c] %}{% endif %}
+            {% endfor %}
+            {{ ns.t }}
+          conflicts: >
+            {% set ns = namespace(c=[]) %}
+            {% for o in opts if o != cur_sel %}
+              {% set p = o.split(' | ') %}
+              {% if p | length > 4 %}
+                {% for t in p[4].split(',') %}
+                  {% if t | trim in topics %}{% set ns.c = ns.c + [(t | trim) ~ ' (' ~ (p[0] | trim) ~ ')'] %}{% endif %}
+                {% endfor %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.c }}
+
+      - if:
+          - condition: template
+            value_template: "{{ conflicts | length > 0 }}"
+        then:
+          - service: persistent_notification.create
+            data:
+              title: "Dashboard Manager"
+              message: >
+                Topics not saved for {{ label }}: already used by another
+                dashboard - {{ conflicts | join(', ') }}. Each topic can belong
+                to only one dashboard.
+          - stop: "topic conflict"
+
+      - variables:
+          # join() rather than a leading-space suffix variable: HA strips leading
+          # whitespace from rendered variables, which would glue fields together.
+          extra: "{{ [show_flag, topics | join(', ')] if topics | length > 0 else ([show_flag] if parts | length > 3 else []) }}"
+          new_opt: "{{ ([label, path, time_val] + extra) | join(' | ') }}"
+          new_list: >
+            {% set ns = namespace(result=[]) %}
+            {% for item in opts %}
+              {% if item == cur_sel %}
+                {% set ns.result = ns.result + [new_opt] %}
+              {% else %}
+                {% set ns.result = ns.result + [item] %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.result }}
+
+      - service: input_select.set_options
+        data:
+          entity_id: input_select.dashboard_rotation
+          options: "{{ new_list }}"
+      - service: input_select.select_option
+        data:
+          entity_id: input_select.dashboard_rotation
+          option: "{{ new_opt }}"
+
+      - service: persistent_notification.create
+        data:
+          title: "Dashboard Manager"
+          message: >
+            {{ label }}: {{ ('voice topics = ' ~ (topics | join(', '))) if topics | length > 0 else 'voice topics cleared' }}
+
+  # ---------------------------------------------------------------------------
+  # Show the dashboard whose topic best matches a spoken/typed utterance
+  # ---------------------------------------------------------------------------
+  dashboard_show_for_utterance:
+    alias: "[Dashboard] Show dashboard matching an utterance"
+    description: >
+      Whole-word match (optional trailing "s") of each dashboard's topics
+      against the text. If several dashboards match, the longest (most
+      specific) topic wins, then the earliest in the sentence, so a single
+      dashboard is launched at most.
+    mode: restart
+    fields:
+      utterance:
+        description: The text to match.
+        example: "how is the swimming pool doing"
+      hold_seconds:
+        description: Seconds to hold before resuming rotation.
+        default: 45
+    sequence:
+      - variables:
+          padded: "{{ ' ' ~ (utterance | default('') | string | lower | regex_replace('[^a-z0-9 ]', ' ') | regex_replace(' +', ' ')) ~ ' ' }}"
+          opts: "{{ state_attr('input_select.dashboard_rotation', 'options') or [] }}"
+          match_path: >
+            {% set ns = namespace(path='', score=0, pos=99999) %}
+            {% for o in opts %}
+              {% set p = o.split(' | ') %}
+              {% if p | length > 4 %}
+                {% for t0 in p[4].split(',') %}
+                  {% set t = t0 | trim %}
+                  {% if t != '' %}
+                    {% set a = padded.find(' ' ~ t ~ ' ') %}
+                    {% set b = padded.find(' ' ~ t ~ 's ') %}
+                    {% set pos = a if (a >= 0 and (b < 0 or a < b)) else b %}
+                    {% if pos >= 0 and (t | length > ns.score or (t | length == ns.score and pos < ns.pos)) %}
+                      {% set ns.path = p[1] | trim %}
+                      {% set ns.score = t | length %}
+                      {% set ns.pos = pos %}
+                    {% endif %}
+                  {% endif %}
+                {% endfor %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.path }}
+      - condition: template
+        value_template: "{{ match_path | length > 0 }}"
+      # Non-blocking so a caller (e.g. the event automation) isn't held for the
+      # whole display period.
+      - service: script.turn_on
+        target:
+          entity_id: script.dashboard_show
+        data:
+          variables:
+            dashboard: "{{ match_path }}"
+            hold_seconds: "{{ hold_seconds | default(45) }}"
+
+automation:
+  - id: dashboard_show_on_utterance_event
+    alias: "[Dashboard] Show matching dashboard on voice utterance"
+    description: >
+      Fire the event needle_voice_utterance with event data {text: "..."} from
+      your voice pipeline to launch the dashboard whose topics match.
+    mode: queued
+    max: 5
+    trigger:
+      - platform: event
+        event_type: needle_voice_utterance
+    action:
+      - service: script.turn_on
+        target:
+          entity_id: script.dashboard_show_for_utterance
+        data:
+          variables:
+            utterance: "{{ trigger.event.data.text | default('') }}"
+
+  # Keep the topics input in step with the selected dashboard so editing starts
+  # from what is currently saved.
+  - id: dashboard_topics_sync_input
+    alias: "[Dashboard] Load topics of selected dashboard into the input"
+    mode: restart
+    trigger:
+      - platform: state
+        entity_id: input_select.dashboard_rotation
+    action:
+      - service: input_text.set_value
+        target:
+          entity_id: input_text.dashboard_manager_topics
+        data:
+          value: >
+            {% set p = trigger.to_state.state.split(' | ') %}
+            {{ p[4] | trim if p | length > 4 else '' }}

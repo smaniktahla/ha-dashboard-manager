@@ -47,7 +47,11 @@ command_line:
 
 template:
   - sensor:
-      # All dashboards from HA, formatted as "Title | /url_path"
+      # All dashboards from HA, formatted as "Title | /url_path".
+      # Storage-mode dashboards come from .storage/lovelace_dashboards. HA's
+      # built-in panels (Energy, Map, ...) are not stored there, so they are
+      # listed explicitly in `builtins` below - edit that list to taste
+      # (e.g. /energy/water if you track water, or drop entries you never use).
       - name: "Dashboard Manager All Dashboards"
         unique_id: dashboard_manager_all_dashboards
         state: >
@@ -56,19 +60,30 @@ template:
           {{ items | length }} dashboards
         attributes:
           dashboards: >
+            {% set builtins = [
+              'Energy (Electricity) | /energy/electricity',
+              'Energy (Overview) | /energy',
+              'Map | /map',
+              'Logbook | /logbook',
+              'History | /history',
+              'Calendar | /calendar'
+            ] %}
             {% set raw = state_attr('sensor.lovelace_dashboards_raw', 'data') %}
             {% set items = raw['items'] if raw and 'items' in raw else [] %}
-            {% if items | length > 0 %}
-              {% set ns = namespace(result=[]) %}
-              {% for d in items %}
-                {% set title = d.get('title', 'Untitled') %}
-                {% set url = '/' ~ d.get('url_path', '') %}
-                {% set ns.result = ns.result + [title ~ ' | ' ~ url] %}
-              {% endfor %}
-              {{ ns.result | sort }}
-            {% else %}
-              []
-            {% endif %}
+            {% set ns = namespace(result=[], paths=[]) %}
+            {% for d in items %}
+              {% set title = d.get('title', 'Untitled') %}
+              {% set url = '/' ~ d.get('url_path', '') %}
+              {% set ns.result = ns.result + [title ~ ' | ' ~ url] %}
+              {% set ns.paths = ns.paths + [url] %}
+            {% endfor %}
+            {# skip a built-in if a stored dashboard already uses its path #}
+            {% for bi in builtins %}
+              {% if (bi.split(' | ')[1]) not in ns.paths %}
+                {% set ns.result = ns.result + [bi] %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.result | sort }}
 
       # Dashboards not yet in the rotation — populates the "add" dropdown
       - name: "Dashboard Manager Available"

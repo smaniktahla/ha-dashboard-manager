@@ -291,8 +291,10 @@ script:
           parts: "{{ cur_sel.split(' | ') }}"
           label: "{{ parts[0] | trim if parts | length > 0 else 'Dashboard' }}"
           path: "{{ parts[1] | trim if parts | length > 1 else '/' }}"
-          show_controls_suffix: "{{ (' | ' ~ parts[3] | trim) if parts | length > 3 else '' }}"
-          new_opt: "{{ label }} | {{ path }} | {{ time_val }}{{ show_controls_suffix }}"
+          # Preserve every field after display time (nav flag, voice topics).
+          # Preserve every field after display time (nav flag, voice topics). Join with
+          # join() - a variable holding ' | x' would lose its leading space when rendered.
+          new_opt: "{{ ([label, path, time_val] + (parts[3:] | map('trim') | list)) | join(' | ') }}"
           new_list: >
             {% set ns = namespace(result=[]) %}
             {% for item in opts %}
@@ -369,7 +371,8 @@ script:
           path: "{{ path }}"
 
   # ---------------------------------------------------------------------------
-  # Toggle the "show nav bar" flag (4th pipe field) for the selected dashboard
+  # Toggle the "show nav bar" flag (4th pipe field) for the selected dashboard.
+  # The 5th field (voice topics) is carried through unchanged.
   # ---------------------------------------------------------------------------
   dashboard_rotation_toggle_nav:
     alias: "[Dashboard] Toggle nav bar for selected"
@@ -389,7 +392,8 @@ script:
           time_val: "{{ parts[2] | trim if parts | length > 2 else '30' }}"
           current_show: "{{ (parts[3] | trim | lower != 'false') if parts | length > 3 else true }}"
           new_show: "{{ not current_show }}"
-          new_opt: "{{ label }} | {{ path }} | {{ time_val }} | {{ new_show | lower }}"
+          extra: "{{ parts[4:5] | map('trim') | list }}"
+          new_opt: "{{ ([label, path, time_val, new_show | lower] + extra) | join(' | ') }}"
           new_list: >
             {% set ns = namespace(result=[]) %}
             {% for item in opts %}
