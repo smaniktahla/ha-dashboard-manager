@@ -8,7 +8,7 @@ Automatic kiosk rotation manager for Home Assistant. Rotate through dashboards o
 - **Rotation** — timer-based, per-dashboard display times, auto-resumes after 5-minute pause (actually resumes the interrupted countdown, not a fresh one — see [Pausing rotation](#pausing-rotation-from-other-automations)), auto-starts on HA boot
 - **Persistent config** — rotation list stored as plain text in `/config/dashboard_rotation.txt`, one dashboard per line; HA restores it automatically across restarts with no race condition and no 255-character limit
 - **Dashboard picker** — enumerates all dashboards configured in HA; select from a dropdown to add to rotation. Only sees storage-mode (UI-created) dashboards — YAML-mode dashboards declared under `lovelace.dashboards` in `configuration.yaml` (like this one, and House Floorplan-style dashboards) don't show up in that dropdown at all, since they're never written to `.storage/lovelace_dashboards`, which is what the enumeration sensor reads. Add those via the "Add Dashboard Manually" form instead. HA's built-in panels (Energy, Map, Logbook, History, Calendar) aren't stored there either, so they come from a short editable `builtins` list in `dashboard_manager_persistence.yaml` and appear in the picker too (a built-in is skipped if a stored dashboard already uses its path).
-- **Voice-launched dashboards** — give each dashboard a few spoken *topics* ("pool", "internet", "weather"); when a voice query matches, the kiosk jumps to that dashboard for a short hold and then resumes rotation. One dashboard per topic. See [Voice topics](#voice-topics).
+- **Voice-launched dashboards** — give each dashboard a few spoken *topics* ("pool", "internet", "weather"); when a voice query matches, the kiosk jumps to that dashboard for a short hold and then resumes rotation. One dashboard per topic, optional per-dashboard hold time, and *voice-only* dashboards that never appear in the rotation. See [Voice topics](#voice-topics).
 - **Nav overlay** — `navbar-card`, one identical block pasted into every dashboard; Previous/Next read the same rotation list Dashboard Manager maintains, so there's no separate list to keep in sync. Toggle visibility per-dashboard from the "Nav Bar on This Dashboard" switch.
 
 <img width="1687" height="1206" alt="image" src="https://github.com/user-attachments/assets/23d305ce-dbff-40e7-8d5f-1f6f7a650273" />
@@ -107,8 +107,10 @@ Cameras | /live-camera-test/cameras | 30
 News | /dashboard-news/0 | 60
 ```
 
-Each line is `Label | path | seconds`, optionally followed by `| nav-flag | topics`
-(`true`/`false` for the nav overlay, then comma-separated [voice topics](#voice-topics)).
+Each line is `Label | path | seconds`, optionally followed by `| nav-flag | topics | voice-hold`
+(`true`/`false` for the nav overlay, comma-separated [voice topics](#voice-topics), and the
+[voice hold](#voice-hold) in seconds). A display time of `0` makes the entry
+[voice-only](#voice-only-dashboards).
 Entries without the extra fields keep working unchanged. Scripts that rewrite an
 entry (display time, nav toggle, topics) carry every field through.
 
@@ -181,9 +183,9 @@ appear, then the display goes back to rotating.
 ### Setting topics
 
 In **Dashboard Manager → Manage Selected Dashboard**, select a dashboard, type
-comma-separated topics into **Voice topics**, and press **Save Topics**
+comma-separated topics into **Voice topics**, and press **Save Voice Settings**
 (`script.dashboard_rotation_set_topics`). Topics are stored as the 5th field of
-that dashboard's rotation entry, e.g.:
+that dashboard's rotation entry (the [voice hold](#voice-hold) is the 6th), e.g.:
 
 ```
 Swimming Pool | /swimming-pool/cameras | 30 | true | pool, swimming
@@ -194,6 +196,33 @@ OPNsense | /dashboard-opnsense/opnsense-stats | 30 | true | internet, wan, netwo
 - **A topic can belong to only one dashboard.** Saving a topic that another dashboard already uses is rejected with a notification naming the conflict; nothing is changed.
 - Clear a dashboard's topics by saving an empty field.
 - Only dashboards in the rotation list can carry topics.
+
+### Voice-only dashboards
+
+A display time of **0** makes a dashboard *voice-only*: the rotation never shows it,
+Previous/Next skip it, but its topics still launch it. Good for things you want on
+demand rather than cycling past - an energy page, a recipe app.
+
+- Add one with **Add Voice-Only** (next to Add to Rotation), or select a dashboard and press
+  **Voice-Only** to toggle it (back to the default display time when turned off).
+- The manual-add form accepts `0` as the display time.
+- If *every* entry is voice-only the rotation has nothing to cycle, so it simply stays put.
+- The nav-overlay snippet skips voice-only entries too; re-paste
+  [`navbar_card_snippet.yaml`](dashboards/navbar_card_snippet.yaml) into your dashboards to pick that up.
+
+### Voice hold
+
+How long a voice launch keeps the rotation paused is a per-dashboard setting (**Voice hold**,
+the 6th field; default **45** seconds, stored as nothing when left at the default). Set it
+in the same panel as the topics and save with **Save Voice Settings**.
+
+- **`0` = stay until resumed.** The dashboard stays up and the rotation stays paused until you
+  press Play on the nav overlay (or turn off `input_boolean.dashboard_rotation_paused`); a
+  2-hour safety timer ends it if you forget. Handy for a recipe you are cooking from with
+  messy hands.
+- The rotation's built-in 5-minute auto-resume would otherwise cut a longer hold short, so
+  `dashboard_show` re-arms that timer to just after the intended end.
+- `script.dashboard_show` also accepts `hold_seconds` to override a dashboard's setting for one call.
 
 ### How a query is matched
 
@@ -206,12 +235,12 @@ nothing.
 The chosen dashboard is shown with `script.dashboard_show`, which:
 1. turns on `input_boolean.dashboard_rotation_paused` (the same documented pause hook as above),
 2. navigates the Target Browser to the dashboard,
-3. holds for `hold_seconds` (default **45**),
+3. holds for the dashboard's [voice hold](#voice-hold) (default **45** seconds),
 4. calls `script.dashboard_rotation_resume`, which unpauses and advances to the next dashboard.
 
 You can also call `script.dashboard_show` directly with either a rotation name or a
 path: `dashboard: weather` or `dashboard: /dashboard-weather/0`, plus an optional
-`hold_seconds`.
+`hold_seconds` (omit it to use the dashboard's own [voice hold](#voice-hold)).
 
 ### Feeding it queries
 

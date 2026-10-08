@@ -118,6 +118,14 @@ views:
             - entity: script.dashboard_add_from_available
               name: Add to Rotation
               icon: mdi:plus-circle
+            - entity: script.dashboard_add_from_available
+              name: Add Voice-Only
+              icon: mdi:microphone-plus
+              tap_action:
+                action: call-service
+                service: script.dashboard_add_from_available
+                data:
+                  voice_only: true
             - entity: script.dashboard_manager_load_from_json
               name: Reload from File
               icon: mdi:refresh
@@ -134,7 +142,7 @@ views:
           - entity: input_text.dashboard_manager_new_path
             name: Path (e.g. /dashboard-weather/0)
           - entity: input_text.dashboard_manager_new_display_time
-            name: Display Time (seconds)
+            name: Display Time (seconds, 0 = voice-only)
         footer:
           type: buttons
           entities:
@@ -155,6 +163,8 @@ views:
                 name: Selected Dashboard
               - entity: input_text.dashboard_manager_topics
                 name: Voice topics (comma-separated, one dashboard per topic)
+              - entity: input_number.dashboard_manager_voice_hold
+                name: Voice hold (seconds, 0 = stay until resumed)
             footer:
               type: buttons
               entities:
@@ -162,8 +172,11 @@ views:
                   name: Jump
                   icon: mdi:television-play
                 - entity: script.dashboard_rotation_set_topics
-                  name: Save Topics
+                  name: Save Voice Settings
                   icon: mdi:microphone-message
+                - entity: script.dashboard_rotation_toggle_voice_only
+                  name: Voice-Only
+                  icon: mdi:microphone-off
                 - entity: script.dashboard_rotation_remove
                   name: Remove
                   icon: mdi:delete
@@ -210,8 +223,9 @@ views:
                 {% set parts = sel.split(' | ') %}
                 **{{ parts[0] | trim }}**
                 Path: `{{ parts[1] | trim if parts | length > 1 else '?' }}`
-                Display time: {{ parts[2] | trim if parts | length > 2 else '30' }}s
-                Voice topics: {{ parts[4] | trim if parts | length > 4 else '_none_' }}
+                Display time: {{ 'voice-only (not in rotation)' if parts | length > 2 and parts[2] | trim == '0' else (parts[2] | trim if parts | length > 2 else '30') ~ 's' }}
+                Voice topics: {{ parts[4] | trim if parts | length > 4 and parts[4] | trim != '' else '_none_' }}
+                Voice hold: {{ ('until resumed' if parts[5] | trim == '0' else parts[5] | trim ~ 's') if parts | length > 5 else '45s (default)' }}
               {% else %}
                 _No dashboard selected_
               {% endif %}
@@ -299,7 +313,7 @@ views:
           {%- else %}
           {%- for o in opts %}
           {%- set parts = o.split(' | ') %}
-          {{ loop.index }}. **{{ parts[0] | trim }}** — `{{ parts[1] | trim if parts | length > 1 else '?' }}` ({{ parts[2] | trim if parts | length > 2 else '30' }}s){{ ' 🎙 ' ~ parts[4] | trim if parts | length > 4 else '' }}
+          {{ loop.index }}. **{{ parts[0] | trim }}** — `{{ parts[1] | trim if parts | length > 1 else '?' }}` ({{ 'voice-only' if parts | length > 2 and parts[2] | trim == '0' else (parts[2] | trim if parts | length > 2 else '30') ~ 's' }}){{ ' 🎙 ' ~ parts[4] | trim if parts | length > 4 else '' }}
           {%- endfor %}
           {%- endif %}
 

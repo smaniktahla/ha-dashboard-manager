@@ -7,7 +7,7 @@
 # input_boolean.dashboard_rotation_paused, resuming through
 # script.dashboard_rotation_resume (unpause + advance to the next dashboard),
 # so the interrupted dashboard's leftover countdown doesn't leave the requested
-# view lingering. The 5-minute auto-resume timer remains the safety net if this
+# view lingering. The auto-resume timer is re-armed to just past the hold as the safety net if this
 # script is killed mid-hold.
 #
 # Voice topics: each rotation entry may carry a 5th pipe field of comma-
@@ -15,7 +15,23 @@
 # A topic belongs to at most one dashboard. When something fires the
 # `needle_voice_utterance` event (or calls script.dashboard_show_for_utterance),
 # the single best-matching dashboard is shown via dashboard_show.
+#
+# Voice hold: an optional 6th field is how long a voice launch keeps the
+# rotation paused ("Pool | /pool | 30 | true | pool | 90"). Omitted = 45s.
+# 0 = stay until you resume the rotation (Play on the nav bar, or the 2-hour
+# safety timer) - e.g. a recipe you are cooking from.
 # =============================================================================
+
+input_number:
+  dashboard_manager_voice_hold:
+    name: "Voice hold (seconds, 0 = stay until resumed)"
+    min: 0
+    max: 7200
+    step: 5
+    initial: 45
+    mode: box
+    unit_of_measurement: s
+    icon: mdi:timer-pause
 
 input_text:
   dashboard_manager_topics:
@@ -28,8 +44,10 @@ script:
   dashboard_show:
     alias: "[Dashboard] Show a dashboard, then resume rotation"
     description: >
-      Navigate the kiosk to a dashboard by rotation-list name or by path, hold
-      it for hold_seconds, then resume rotation.
+      Navigate the kiosk to a dashboard by rotation-list name or by path and
+      hold it, then resume rotation. The hold comes from the dashboard's own
+      voice-hold setting (6th rotation field) unless hold_seconds is passed;
+      default 45s. A hold of 0 means stay until the rotation is resumed.
     mode: restart
     fields:
       dashboard:
@@ -38,13 +56,13 @@ script:
           "weather") or a path starting with "/" (e.g. /dashboard-weather/0).
         example: weather
       hold_seconds:
-        description: Seconds to hold before resuming rotation.
-        default: 45
+        description: >
+          Seconds to hold before resuming rotation; 0 = stay until resumed.
+          Omit to use the dashboard's own setting (default 45).
         example: 45
     sequence:
       - variables:
           query: "{{ dashboard | default('') | string | trim | lower }}"
-          hold: "{{ hold_seconds | default(45) | int(45) }}"
           browser_id: "{{ states('input_text.dashboard_manager_target_browser') | trim }}"
           opts: "{{ state_attr('input_select.dashboard_rotation', 'options') or [] }}"
           by_name: >
@@ -58,6 +76,27 @@ script:
             {{ ns.path }}
           path: >
             {{ query if query.startswith('/') else (by_name | trim) }}
+          # The dashboard's own voice hold (6th field), if it is in the list.
+          entry_hold: >
+            {% set ns = namespace(h='') %}
+            {% for o in opts %}
+              {% set p = o.split(' | ') %}
+              {% if ns.h == '' and p | length > 5 and (p[1] | trim) == path and (p[5] | trim) is match('^[0-9]+$') %}
+                {% set ns.h = p[5] | trim %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.h }}
+          hold: >
+            {% if hold_seconds is defined and hold_seconds is not none and (hold_seconds | string) is match('^[0-9]+$') %}{{ hold_seconds | int }}
+            {% elif entry_hold | string | length > 0 %}{{ entry_hold | int }}
+            {% else %}45{% endif %}
+          stay: "{{ hold | int(45) == 0 }}"
+          # Safety net: the rotation's own 5-minute auto-resume would cut a
+          # long hold short, so re-arm it for just after the intended end
+          # (2 hours when staying).
+          safety_s: "{{ 7200 if stay else (hold | int(45)) + 30 }}"
+          safety: >
+            {{ '%02d:%02d:%02d' | format(safety_s // 3600, (safety_s % 3600) // 60, safety_s % 60) }}
 
       # Unknown name and not a path: do nothing rather than blank the kiosk.
       - condition: template
@@ -70,8 +109,21 @@ script:
         data:
           browser_id: "{{ browser_id }}"
           path: "{{ path }}"
+      # Let the pause automation start its 5-minute auto-resume, then override.
       - delay:
-          seconds: "{{ hold }}"
+          seconds: 1
+      - service: timer.start
+        target:
+          entity_id: timer.dashboard_autoresume_timer
+        data:
+          duration: "{{ safety }}"
+
+      # Staying: leave the rotation paused; the user (Play on the nav bar) or
+      # the safety timer ends it.
+      - condition: template
+        value_template: "{{ not stay }}"
+      - delay:
+          seconds: "{{ hold | int(45) }}"
       # If someone already resumed during the hold (nav overlay Play), don't
       # advance a second time.
       - condition: state
@@ -90,6 +142,7 @@ script:
           cur_sel: "{{ states('input_select.dashboard_rotation') | trim }}"
           opts: "{{ state_attr('input_select.dashboard_rotation', 'options') or [] }}"
           raw: "{{ states('input_text.dashboard_manager_topics') }}"
+          hold_in: "{{ states('input_number.dashboard_manager_voice_hold') | int(45) }}"
 
       - condition: template
         value_template: "{{ cur_sel | length > 0 and opts | length > 0 and 'No dashboards' not in cur_sel }}"
@@ -136,7 +189,15 @@ script:
       - variables:
           # join() rather than a leading-space suffix variable: HA strips leading
           # whitespace from rendered variables, which would glue fields together.
-          extra: "{{ [show_flag, topics | join(', ')] if topics | length > 0 else ([show_flag] if parts | length > 3 else []) }}"
+          # Trailing fields: nav flag, topics, voice hold. The default hold (45)
+          # is stored as nothing; trailing empties are dropped; an entry that
+          # had only 3 fields and gains nothing stays at 3.
+          extra: >
+            {% set l = [show_flag, topics | join(', '), hold_in | string] %}
+            {% if hold_in | int(45) == 45 %}{% set l = l[:2] %}{% endif %}
+            {% if hold_in | int(45) == 45 and topics | length == 0 %}{% set l = l[:1] %}{% endif %}
+            {% if l == [show_flag] and parts | length <= 3 %}{% set l = [] %}{% endif %}
+            {{ l }}
           new_opt: "{{ ([label, path, time_val] + extra) | join(' | ') }}"
           new_list: >
             {% set ns = namespace(result=[]) %}
@@ -162,7 +223,8 @@ script:
         data:
           title: "Dashboard Manager"
           message: >
-            {{ label }}: {{ ('voice topics = ' ~ (topics | join(', '))) if topics | length > 0 else 'voice topics cleared' }}
+            {{ label }}: {{ ('voice topics = ' ~ (topics | join(', '))) if topics | length > 0 else 'voice topics cleared' }};
+            voice hold {{ 'until resumed' if hold_in | int(45) == 0 else (hold_in ~ 's') }}
 
   # ---------------------------------------------------------------------------
   # Show the dashboard whose topic best matches a spoken/typed utterance
@@ -180,8 +242,9 @@ script:
         description: The text to match.
         example: "how is the swimming pool doing"
       hold_seconds:
-        description: Seconds to hold before resuming rotation.
-        default: 45
+        description: >
+          Override the hold (seconds; 0 = until resumed). Omit to use the
+          matched dashboard's own voice-hold setting.
     sequence:
       - variables:
           padded: "{{ ' ' ~ (utterance | default('') | string | lower | regex_replace('[^a-z0-9 ]', ' ') | regex_replace(' +', ' ')) ~ ' ' }}"
@@ -215,9 +278,10 @@ script:
         target:
           entity_id: script.dashboard_show
         data:
-          variables:
-            dashboard: "{{ match_path }}"
-            hold_seconds: "{{ hold_seconds | default(45) }}"
+          variables: >
+            {% set v = {'dashboard': match_path} %}
+            {% if hold_seconds is defined and hold_seconds is not none %}{% set v = dict(v, hold_seconds=hold_seconds) %}{% endif %}
+            {{ v }}
 
 automation:
   - id: dashboard_show_on_utterance_event
@@ -254,3 +318,10 @@ automation:
           value: >
             {% set p = trigger.to_state.state.split(' | ') %}
             {{ p[4] | trim if p | length > 4 else '' }}
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.dashboard_manager_voice_hold
+        data:
+          value: >
+            {% set p = trigger.to_state.state.split(' | ') %}
+            {{ (p[5] | trim | int(45)) if p | length > 5 else 45 }}
