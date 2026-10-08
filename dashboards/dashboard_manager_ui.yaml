@@ -153,12 +153,17 @@ views:
             entities:
               - entity: input_select.dashboard_rotation
                 name: Selected Dashboard
+              - entity: input_text.dashboard_manager_topics
+                name: Voice topics (comma-separated, one dashboard per topic)
             footer:
               type: buttons
               entities:
                 - entity: script.dashboard_nav_jump
                   name: Jump
                   icon: mdi:television-play
+                - entity: script.dashboard_rotation_set_topics
+                  name: Save Topics
+                  icon: mdi:microphone-message
                 - entity: script.dashboard_rotation_remove
                   name: Remove
                   icon: mdi:delete
@@ -206,6 +211,7 @@ views:
                 **{{ parts[0] | trim }}**
                 Path: `{{ parts[1] | trim if parts | length > 1 else '?' }}`
                 Display time: {{ parts[2] | trim if parts | length > 2 else '30' }}s
+                Voice topics: {{ parts[4] | trim if parts | length > 4 else '_none_' }}
               {% else %}
                 _No dashboard selected_
               {% endif %}
@@ -293,7 +299,7 @@ views:
           {%- else %}
           {%- for o in opts %}
           {%- set parts = o.split(' | ') %}
-          {{ loop.index }}. **{{ parts[0] | trim }}** — `{{ parts[1] | trim if parts | length > 1 else '?' }}` ({{ parts[2] | trim if parts | length > 2 else '30' }}s)
+          {{ loop.index }}. **{{ parts[0] | trim }}** — `{{ parts[1] | trim if parts | length > 1 else '?' }}` ({{ parts[2] | trim if parts | length > 2 else '30' }}s){{ ' 🎙 ' ~ parts[4] | trim if parts | length > 4 else '' }}
           {%- endfor %}
           {%- endif %}
 

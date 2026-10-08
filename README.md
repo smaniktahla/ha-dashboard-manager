@@ -8,6 +8,7 @@ Automatic kiosk rotation manager for Home Assistant. Rotate through dashboards o
 - **Rotation** — timer-based, per-dashboard display times, auto-resumes after 5-minute pause (actually resumes the interrupted countdown, not a fresh one — see [Pausing rotation](#pausing-rotation-from-other-automations)), auto-starts on HA boot
 - **Persistent config** — rotation list stored as plain text in `/config/dashboard_rotation.txt`, one dashboard per line; HA restores it automatically across restarts with no race condition and no 255-character limit
 - **Dashboard picker** — enumerates all dashboards configured in HA; select from a dropdown to add to rotation. Only sees storage-mode (UI-created) dashboards — YAML-mode dashboards declared under `lovelace.dashboards` in `configuration.yaml` (like this one, and House Floorplan-style dashboards) don't show up in that dropdown at all, since they're never written to `.storage/lovelace_dashboards`, which is what the enumeration sensor reads. Add those via the "Add Dashboard Manually" form instead.
+- **Voice-launched dashboards** — give each dashboard a few spoken *topics* ("pool", "internet", "weather"); when a voice query matches, the kiosk jumps to that dashboard for a short hold and then resumes rotation. One dashboard per topic. See [Voice topics](#voice-topics).
 - **Nav overlay** — `navbar-card`, one identical block pasted into every dashboard; Previous/Next read the same rotation list Dashboard Manager maintains, so there's no separate list to keep in sync. Toggle visibility per-dashboard from the "Nav Bar on This Dashboard" switch.
 
 <img width="1687" height="1206" alt="image" src="https://github.com/user-attachments/assets/23d305ce-dbff-40e7-8d5f-1f6f7a650273" />
@@ -31,6 +32,7 @@ Copy the package files from `packages/` to `/config/packages/`:
 - `dashboard_manager_persistence.yaml`
 - `dashboard_manager_rotator.yaml`
 - `dashboard_shell_commands.yaml`
+- `dashboard_manager_voice.yaml` (optional - only needed for [Voice topics](#voice-topics) / `script.dashboard_show`)
 
 Also copy `dashboard_manager/read_rotation.sh` to `/config/dashboard_manager/`
 and make it executable (`chmod +x`) — the persistence sensor shells out to it.
@@ -105,6 +107,11 @@ Cameras | /live-camera-test/cameras | 30
 News | /dashboard-news/0 | 60
 ```
 
+Each line is `Label | path | seconds`, optionally followed by `| nav-flag | topics`
+(`true`/`false` for the nav overlay, then comma-separated [voice topics](#voice-topics)).
+Entries without the extra fields keep working unchanged. Scripts that rewrite an
+entry (display time, nav toggle, topics) carry every field through.
+
 An earlier version of this joined all entries onto a single line with a
 `~~~` delimiter instead of real newlines, to dodge a JSON-encoding problem
 (see below). That traded away human/git readability for no real benefit —
@@ -163,6 +170,82 @@ from *paused*) — `script.dashboard_rotation_stop` turns rotation off entirely 
 timer; nothing auto-restarts it until `script.dashboard_rotation_start` runs again. If your
 nav overlay's countdown pill is stuck on `idle` and pause/resume doesn't seem to do anything,
 check this boolean before assuming something's broken.
+
+## Voice topics
+
+Voice assistants are good at *answering*; a wall display is good at *showing*.
+This lets a spoken question put the matching dashboard on screen: ask about the
+pool and the pool cameras come up, ask about the internet and the firewall stats
+appear, then the display goes back to rotating.
+
+### Setting topics
+
+In **Dashboard Manager → Manage Selected Dashboard**, select a dashboard, type
+comma-separated topics into **Voice topics**, and press **Save Topics**
+(`script.dashboard_rotation_set_topics`). Topics are stored as the 5th field of
+that dashboard's rotation entry, e.g.:
+
+```
+Swimming Pool | /swimming-pool/cameras | 30 | true | pool, swimming
+OPNsense | /dashboard-opnsense/opnsense-stats | 30 | true | internet, wan, network connection
+```
+
+- Topics are lowercased and reduced to letters, digits and spaces. Multi-word topics are fine.
+- **A topic can belong to only one dashboard.** Saving a topic that another dashboard already uses is rejected with a notification naming the conflict; nothing is changed.
+- Clear a dashboard's topics by saving an empty field.
+- Only dashboards in the rotation list can carry topics.
+
+### How a query is matched
+
+`script.dashboard_show_for_utterance` takes the text and looks for each topic as a
+whole word (a trailing "s" is also accepted, so `camera` matches "cameras"). If several
+dashboards match, the **longest topic wins** (the most specific), then the one that
+appears earliest in the sentence, so at most one dashboard is launched. No match does
+nothing.
+
+The chosen dashboard is shown with `script.dashboard_show`, which:
+1. turns on `input_boolean.dashboard_rotation_paused` (the same documented pause hook as above),
+2. navigates the Target Browser to the dashboard,
+3. holds for `hold_seconds` (default **45**),
+4. calls `script.dashboard_rotation_resume`, which unpauses and advances to the next dashboard.
+
+You can also call `script.dashboard_show` directly with either a rotation name or a
+path: `dashboard: weather` or `dashboard: /dashboard-weather/0`, plus an optional
+`hold_seconds`.
+
+### Feeding it queries
+
+An automation listens for the event **`needle_voice_utterance`** with `{text: "..."}`
+and runs the matcher. Fire it from whatever handles your voice queries.
+
+With HA's built-in Assist, a catch-all [sentence trigger](https://www.home-assistant.io/docs/automation/trigger/#sentence-trigger)
+can do it for the phrases you care about:
+
+```yaml
+automation:
+  - alias: "Voice: show a dashboard"
+    trigger:
+      - platform: conversation
+        command:
+          - "show me {topic}"
+          - "what's the {topic}"
+    action:
+      - event: needle_voice_utterance
+        event_data:
+          text: "{{ trigger.sentence }}"
+```
+
+With a custom conversation agent, fire the same event from code, for example
+`hass.bus.async_fire("needle_voice_utterance", {"text": user_input.text})`. In the
+author's setup the router fires it only for informational questions it hands to the
+LLM (not for device commands such as "turn off the pool light", which would otherwise
+pop up the pool dashboard), once when the question arrives and again when the
+answer comes back so the dashboard is still showing when the answer is spoken.
+
+> **Gotcha for anyone extending these scripts:** HA strips leading/trailing whitespace
+> from rendered template variables, so a variable holding `" | topics"` silently loses
+> its leading space and glues fields together (`true| pool`). Build entries with
+> `[...] | join(' | ')` instead of concatenating a suffix variable.
 
 ## LCARS theme (Personal Note)
 I like running the LCARS theme on my kiosk display, because it's fun and I like Star Trek.
