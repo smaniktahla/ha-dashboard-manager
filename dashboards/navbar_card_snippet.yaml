@@ -103,12 +103,17 @@ routes:
         [[[
           const opts = (hass.states['input_select.dashboard_rotation']?.attributes?.options) || [];
           if (!opts.length) return;
-          const paths = opts.map(o => (o.split(' | ')[1] || '').trim()).filter(p => p);
-          if (!paths.length) return;
-          let idx = paths.findIndex(p => window.location.pathname.startsWith(p));
+          const ents = opts.map(o => { const q = o.split(' | '); return {path: (q[1] || '').trim(), voiceOnly: (q[2] || '').trim() === '0'}; }).filter(e => e.path);
+          if (!ents.length) return;
+          let idx = ents.findIndex(e => window.location.pathname.startsWith(e.path));
           if (idx === -1) idx = 0;
-          const target = paths[(idx - 1 + paths.length) % paths.length];
-          window.location.assign(target);
+          // Step previous, skipping voice-only entries (display time 0): they are not in the rotation.
+          let target = null;
+          for (let i = 1; i <= ents.length; i++) {
+            const e = ents[(idx - i + ents.length) % ents.length];
+            if (!e.voiceOnly) { target = e.path; break; }
+          }
+          if (target) window.location.assign(target);
         ]]]
 
   - icon: mdi:play-pause
@@ -149,12 +154,17 @@ routes:
         [[[
           const opts = (hass.states['input_select.dashboard_rotation']?.attributes?.options) || [];
           if (!opts.length) return;
-          const paths = opts.map(o => (o.split(' | ')[1] || '').trim()).filter(p => p);
-          if (!paths.length) return;
-          let idx = paths.findIndex(p => window.location.pathname.startsWith(p));
+          const ents = opts.map(o => { const q = o.split(' | '); return {path: (q[1] || '').trim(), voiceOnly: (q[2] || '').trim() === '0'}; }).filter(e => e.path);
+          if (!ents.length) return;
+          let idx = ents.findIndex(e => window.location.pathname.startsWith(e.path));
           if (idx === -1) idx = 0;
-          const target = paths[(idx + 1) % paths.length];
-          window.location.assign(target);
+          // Step next, skipping voice-only entries (display time 0): they are not in the rotation.
+          let target = null;
+          for (let i = 1; i <= ents.length; i++) {
+            const e = ents[(idx + i) % ents.length];
+            if (!e.voiceOnly) { target = e.path; break; }
+          }
+          if (target) window.location.assign(target);
         ]]]
 
   - icon: mdi:stop-circle

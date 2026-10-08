@@ -31,6 +31,7 @@ script:
       - service: input_boolean.turn_on
         target:
           entity_id: input_boolean.dashboard_rotation_enabled
+      - service: script.dashboard_rotation_skip_voice_only
       - service: script.dashboard_nav_jump
       - service: script.dashboard_rotation_schedule_next
 
@@ -52,7 +53,9 @@ script:
       - variables:
           raw: "{{ states('input_select.dashboard_rotation') | trim }}"
           parts: "{{ raw.split(' | ') }}"
-          display_time: "{{ parts[2] | trim | int(30) if parts | length > 2 else 30 }}"
+          # 0 = voice-only; those are skipped before we get here, but never
+          # start a zero-length timer if one slips through.
+          display_time: "{{ (parts[2] | trim | int(30) if parts | length > 2 else 30) or 30 }}"
           duration: >
             {% if display_time < 60 %}
               00:00:{{ '%02d' | format(display_time) }}
@@ -73,6 +76,7 @@ script:
         data:
           entity_id: input_select.dashboard_rotation
           cycle: true
+      - service: script.dashboard_rotation_skip_voice_only
       - service: script.dashboard_nav_jump
       - service: script.dashboard_rotation_schedule_next
 
@@ -217,6 +221,7 @@ automation:
       - condition: template
         value_template: >
           {{ 'No dashboards' not in states('input_select.dashboard_rotation') }}
+      - service: script.dashboard_rotation_skip_voice_only
       - service: script.dashboard_nav_jump
       - service: script.dashboard_rotation_schedule_next
     mode: single

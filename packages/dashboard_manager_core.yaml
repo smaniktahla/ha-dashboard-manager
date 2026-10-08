@@ -76,12 +76,12 @@ script:
 
       - if:
           - condition: template
-            value_template: "{{ display_time | int(0) <= 0 }}"
+            value_template: "{{ not (display_time | regex_match('^[0-9]+$')) }}"
         then:
           - service: persistent_notification.create
             data:
               title: "Dashboard Manager"
-              message: "Add failed: display time must be a positive number of seconds (got '{{ display_time }}')."
+              message: "Add failed: display time must be a whole number of seconds, or 0 for a voice-only dashboard (got '{{ display_time }}')."
           - stop: "invalid display time"
 
       - variables:
@@ -124,11 +124,19 @@ script:
   dashboard_add_from_available:
     alias: "[Dashboard] Add from available list"
     mode: restart
+    fields:
+      voice_only:
+        description: >
+          Add as a voice-only dashboard (display time 0): skipped by the
+          rotation, but still launchable by voice topics.
+        example: false
     sequence:
       - variables:
           selected: "{{ states('input_select.dashboard_available') | trim }}"
           opts: "{{ state_attr('input_select.dashboard_rotation', 'options') or [] }}"
-          display_time: "{{ states('input_number.dashboard_default_display_time') | int(30) }}"
+          display_time: >-
+            {{ 0 if (voice_only | default(false) | string | lower == 'true')
+               else states('input_number.dashboard_default_display_time') | int(30) }}
 
       - condition: template
         value_template: >
@@ -164,7 +172,9 @@ script:
       - service: persistent_notification.create
         data:
           title: "Dashboard Manager"
-          message: "Added {{ label }} to rotation ({{ display_time }}s)"
+          message: >-
+            {% if display_time | int(30) == 0 %}Added {{ label }} as voice-only (not in rotation; set voice topics to launch it)
+            {% else %}Added {{ label }} to rotation ({{ display_time }}s){% endif %}
 
   # ---------------------------------------------------------------------------
   # Remove current selection from rotation
@@ -319,7 +329,9 @@ script:
       - service: persistent_notification.create
         data:
           title: "Dashboard Manager"
-          message: "Display time updated to {{ time_val }}s for {{ label }}"
+          message: >-
+            {% if time_val | int(30) == 0 %}{{ label }} is now voice-only (skipped by the rotation)
+            {% else %}Display time updated to {{ time_val }}s for {{ label }}{% endif %}
 
   # Update display time using value from input_text.dashboard_manager_new_display_time
   dashboard_rotation_update_time_from_input:
@@ -327,12 +339,73 @@ script:
     mode: restart
     sequence:
       - variables:
-          time_val: "{{ states('input_text.dashboard_manager_new_display_time') | int(0) }}"
+          raw_time: "{{ states('input_text.dashboard_manager_new_display_time') | trim }}"
+          time_val: "{{ raw_time | int(0) }}"
+      # 0 is valid: it makes the dashboard voice-only.
       - condition: template
-        value_template: "{{ time_val > 0 }}"
+        value_template: "{{ raw_time | regex_match('^[0-9]+$') }}"
       - service: script.dashboard_rotation_update_time
         data:
           new_time: "{{ time_val }}"
+
+  # ---------------------------------------------------------------------------
+  # Voice-only dashboards: display time 0 means "not part of the rotation".
+  # Advance the selection past any such entries (used by every code path that
+  # moves the selection, so the kiosk never rotates onto one).
+  # ---------------------------------------------------------------------------
+  dashboard_rotation_skip_voice_only:
+    alias: "[Dashboard] Skip voice-only entries"
+    mode: queued
+    fields:
+      direction:
+        description: "next (default) or previous"
+        example: next
+    sequence:
+      - variables:
+          opts: "{{ state_attr('input_select.dashboard_rotation', 'options') or [] }}"
+          n: "{{ opts | length }}"
+          # How many entries are actually in the rotation (display time != 0).
+          n_active: >
+            {% set ns = namespace(c=0) %}
+            {% for o in opts %}
+              {% set p = o.split(' | ') %}
+              {% if not (p | length > 2 and p[2] | trim == '0') %}{% set ns.c = ns.c + 1 %}{% endif %}
+            {% endfor %}
+            {{ ns.c }}
+      - repeat:
+          while:
+            - condition: template
+              value_template: >
+                {% set p = states('input_select.dashboard_rotation').split(' | ') %}
+                {{ n_active | int(0) > 0 and repeat.index <= n | int(0)
+                   and p | length > 2 and p[2] | trim == '0' }}
+          sequence:
+            - choose:
+                - conditions: "{{ direction | default('next') == 'previous' }}"
+                  sequence:
+                    - service: input_select.select_previous
+                      target:
+                        entity_id: input_select.dashboard_rotation
+              default:
+                - service: input_select.select_next
+                  target:
+                    entity_id: input_select.dashboard_rotation
+
+  # Toggle the selected dashboard between voice-only (0) and the default
+  # display time.
+  dashboard_rotation_toggle_voice_only:
+    alias: "[Dashboard] Toggle voice-only for selected"
+    mode: restart
+    sequence:
+      - variables:
+          cur_sel: "{{ states('input_select.dashboard_rotation') | trim }}"
+          p: "{{ cur_sel.split(' | ') }}"
+          is_voice_only: "{{ p | length > 2 and p[2] | trim == '0' }}"
+      - condition: template
+        value_template: "{{ cur_sel | length > 0 and 'No dashboards' not in cur_sel }}"
+      - service: script.dashboard_rotation_update_time
+        data:
+          new_time: "{{ states('input_number.dashboard_default_display_time') | int(30) if is_voice_only else 0 }}"
 
   # ---------------------------------------------------------------------------
   # Navigation
@@ -344,6 +417,9 @@ script:
       - service: input_select.select_previous
         target:
           entity_id: input_select.dashboard_rotation
+      - service: script.dashboard_rotation_skip_voice_only
+        data:
+          direction: previous
       - service: script.dashboard_nav_jump
 
   dashboard_nav_next:
@@ -353,6 +429,9 @@ script:
       - service: input_select.select_next
         target:
           entity_id: input_select.dashboard_rotation
+      - service: script.dashboard_rotation_skip_voice_only
+        data:
+          direction: next
       - service: script.dashboard_nav_jump
 
   dashboard_nav_jump:
@@ -392,7 +471,7 @@ script:
           time_val: "{{ parts[2] | trim if parts | length > 2 else '30' }}"
           current_show: "{{ (parts[3] | trim | lower != 'false') if parts | length > 3 else true }}"
           new_show: "{{ not current_show }}"
-          extra: "{{ parts[4:5] | map('trim') | list }}"
+          extra: "{{ parts[4:] | map('trim') | list }}"
           new_opt: "{{ ([label, path, time_val, new_show | lower] + extra) | join(' | ') }}"
           new_list: >
             {% set ns = namespace(result=[]) %}
