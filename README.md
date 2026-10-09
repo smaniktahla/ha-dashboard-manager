@@ -143,6 +143,16 @@ shell_command:
 `read_rotation.sh` uses only `sh` builtins (`read`/`printf`) — no `sed`/`awk`/
 `tr` — since the HA Core container isn't guaranteed to have them installed.
 
+## Troubleshooting persistence
+
+If dashboards, topics or other changes made in the manager UI vanish after a Home
+Assistant restart, check that `automation.dashboard_auto_save_rotation_to_json` is **on**
+(Settings → Automations). It is the only thing that writes `/config/dashboard_rotation.txt`;
+if it has been disabled, the UI keeps working but nothing is saved. The file's modification
+time is a quick tell. You can also write it on demand with `script.dashboard_manager_save_to_json`.
+Home Assistant's recorder keeps the history of the `input_select.dashboard_rotation` options
+attribute, which is a way to recover a list that was lost this way.
+
 ## Pausing rotation from other automations
 
 If you want another automation (a camera alert popup, a doorbell announcement,

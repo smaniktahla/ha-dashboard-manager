@@ -247,9 +247,14 @@ script:
           matched dashboard's own voice-hold setting.
     sequence:
       - variables:
-          padded: "{{ ' ' ~ (utterance | default('') | string | lower | regex_replace('[^a-z0-9 ]', ' ') | regex_replace(' +', ' ')) ~ ' ' }}"
+          norm: "{{ utterance | default('') | string | lower | regex_replace('[^a-z0-9 ]', ' ') | regex_replace(' +', ' ') }}"
           opts: "{{ state_attr('input_select.dashboard_rotation', 'options') or [] }}"
           match_path: >
+            {# Pad INSIDE this template: HA strips leading/trailing whitespace from
+               variables, so a padded variable would lose its edge spaces and a topic
+               at the very start/end of the sentence ("what's the weather") would never
+               match. #}
+            {% set padded = ' ' ~ norm ~ ' ' %}
             {% set ns = namespace(path='', score=0, pos=99999) %}
             {% for o in opts %}
               {% set p = o.split(' | ') %}
