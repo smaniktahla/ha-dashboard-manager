@@ -22,6 +22,18 @@
 # =============================================================================
 
 # ---------------------------------------------------------------------------
+# Auto-save watchdog switch. While this is on, the watchdog automation below
+# re-enables the auto-save automation if it is ever found switched off
+# (a disabled auto-save silently discards every UI change at the next restart).
+# Turn this OFF only if you really want auto-save disabled.
+# ---------------------------------------------------------------------------
+input_boolean:
+  dashboard_manager_autosave_watchdog:
+    name: "Dashboard Manager: keep auto-save enabled"
+    icon: mdi:shield-check
+    initial: true
+
+# ---------------------------------------------------------------------------
 # Dashboard enumeration sensor
 # Reads .storage/lovelace_dashboards to get the full list of configured
 # dashboards, then cross-references with the current rotation.
@@ -158,6 +170,49 @@ automation:
           seconds: 2
       - service: script.dashboard_manager_save_to_json
     mode: restart
+
+  # ---------------------------------------------------------------------------
+  # Watchdog: the auto-save automation above is the ONLY thing that writes
+  # /config/dashboard_rotation.txt. If it gets disabled (by a UI toggle, a
+  # script, a debugging session...) Home Assistant remembers that across
+  # restarts and every change made in the manager is silently lost at the next
+  # restart. Put it back, save what is in memory, and say so.
+  # ---------------------------------------------------------------------------
+  - id: dashboard_manager_autosave_watchdog
+    alias: "[Dashboard] Keep auto-save enabled (watchdog)"
+    mode: single
+    trigger:
+      - platform: state
+        entity_id: automation.dashboard_auto_save_rotation_to_json
+        to: "off"
+      - platform: homeassistant
+        event: start
+    condition:
+      - condition: state
+        entity_id: input_boolean.dashboard_manager_autosave_watchdog
+        state: "on"
+    action:
+      # On HA start give the automation entities a moment to come up.
+      - delay:
+          seconds: "{{ 60 if trigger.platform == 'homeassistant' else 2 }}"
+      - condition: state
+        entity_id: automation.dashboard_auto_save_rotation_to_json
+        state: "off"
+      - service: automation.turn_on
+        target:
+          entity_id: automation.dashboard_auto_save_rotation_to_json
+      # Persist whatever is in memory now (a no-op if the list is the empty
+      # default, so it can never overwrite the file with nothing).
+      - service: script.dashboard_manager_save_to_json
+      - service: persistent_notification.create
+        data:
+          title: "Dashboard Manager"
+          notification_id: dashboard_manager_autosave_watchdog
+          message: >
+            The rotation auto-save automation was switched off, so changes would not
+            have survived a restart. It has been turned back on and the current list
+            was saved. To allow it to stay off, turn off
+            input_boolean.dashboard_manager_autosave_watchdog first.
 
   # ---------------------------------------------------------------------------
   # Refresh the available dashboards dropdown whenever the rotation changes

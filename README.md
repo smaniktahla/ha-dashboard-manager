@@ -150,6 +150,11 @@ Assistant restart, check that `automation.dashboard_auto_save_rotation_to_json` 
 (Settings → Automations). It is the only thing that writes `/config/dashboard_rotation.txt`;
 if it has been disabled, the UI keeps working but nothing is saved. The file's modification
 time is a quick tell. You can also write it on demand with `script.dashboard_manager_save_to_json`.
+
+A **watchdog** (`dashboard_manager_autosave_watchdog`) guards against this: if the auto-save
+automation is ever found switched off (when it changes, and 60 seconds after HA starts), it turns
+it back on, saves the current list and raises a notification. If you really want auto-save off,
+first turn off `input_boolean.dashboard_manager_autosave_watchdog`.
 Home Assistant's recorder keeps the history of the `input_select.dashboard_rotation` options
 attribute, which is a way to recover a list that was lost this way.
 
