@@ -89,6 +89,8 @@ script:
           entity_id: input_boolean.dashboard_rotation_paused
       - service: script.dashboard_rotation_next
 
+# Route override: while input_boolean.kiosk_route_active is on (see kiosk_route.yaml) nothing in this file navigates the kiosk, so a pause that ends
+# (a camera popup finishing, the 5-minute auto-resume) cannot move the display off a route that is being shown.
 automation:
   - id: dashboard_rotation_start_on_enable
     alias: "[Dashboard] Start rotation on enable"
@@ -112,6 +114,9 @@ automation:
         event_data:
           entity_id: timer.dashboard_rotation_timer
     condition:
+      - condition: state
+        entity_id: input_boolean.kiosk_route_active
+        state: "off"
       - condition: state
         entity_id: input_boolean.dashboard_rotation_enabled
         state: "on"
@@ -148,6 +153,9 @@ automation:
         to: "off"
     condition:
       - condition: state
+        entity_id: input_boolean.kiosk_route_active
+        state: "off"
+      - condition: state
         entity_id: input_boolean.dashboard_rotation_enabled
         state: "on"
     action:
@@ -179,6 +187,9 @@ automation:
           entity_id: timer.dashboard_autoresume_timer
     condition:
       - condition: state
+        entity_id: input_boolean.kiosk_route_active
+        state: "off"
+      - condition: state
         entity_id: input_boolean.dashboard_rotation_paused
         state: "on"
       - condition: state
@@ -209,6 +220,9 @@ automation:
       - platform: homeassistant
         event: start
     condition:
+      - condition: state
+        entity_id: input_boolean.kiosk_route_active
+        state: "off"
       - condition: state
         entity_id: input_boolean.dashboard_rotation_enabled
         state: "on"

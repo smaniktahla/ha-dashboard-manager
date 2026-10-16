@@ -102,6 +102,11 @@ script:
       - condition: template
         value_template: "{{ path | length > 0 and browser_id | length > 0 }}"
 
+      # A route is on the kiosk (kiosk_route.yaml): a spoken topic must not replace it.
+      - condition: state
+        entity_id: input_boolean.kiosk_route_active
+        state: "off"
+
       - service: input_boolean.turn_on
         target:
           entity_id: input_boolean.dashboard_rotation_paused

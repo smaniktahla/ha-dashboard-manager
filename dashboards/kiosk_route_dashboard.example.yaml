@@ -1,0 +1,11 @@
+# Example dashboard for packages/kiosk_route.yaml: one full-screen iframe of a page you want pinned on the kiosk (e.g. a navigation route viewer).
+# Create it as a dashboard with URL path "kiosk-route" (or set input_text.kiosk_route_path to wherever you put it) and paste this as its raw config.
+# Replace the url with your own; if it contains a secret (a signed link), keep it in your own HA config and do not publish it.
+views:
+  - title: Route
+    path: route
+    panel: true
+    cards:
+      - type: iframe
+        url: http://example.invalid/viewer/index.html
+        aspect_ratio: 56.25%      # 16:9 kiosk; adjust to your screen

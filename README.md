@@ -188,6 +188,16 @@ timer; nothing auto-restarts it until `script.dashboard_rotation_start` runs aga
 nav overlay's countdown pill is stuck on `idle` and pause/resume doesn't seem to do anything,
 check this boolean before assuming something's broken.
 
+## Pinning a page on the kiosk (route override)
+
+`packages/kiosk_route.yaml` adds `script.kiosk_route_show` / `script.kiosk_route_close` and `input_boolean.kiosk_route_active`. Showing pauses the rotation,
+sets the flag and navigates the Target Browser to the page in `input_text.kiosk_route_path` (default `/kiosk-route/route`; see
+[`dashboards/kiosk_route_dashboard.example.yaml`](dashboards/kiosk_route_dashboard.example.yaml) for a full-screen iframe dashboard). While the flag is on, the
+rotator's timer, 5-minute auto-resume, start-on-HA-start automations and `script.dashboard_show` do nothing, so another automation's pause/unpause (a camera
+popup finishing) or a voice topic cannot move the display off the pinned page. Popups are overlays and are untouched: when one closes the page is visible
+again. The flag survives an HA restart, and if the kiosk browser reloads onto another page while it is on, it is sent back after 10 seconds. Closing clears the
+flag and resumes the rotation at the next dashboard. Reload scripts/automations/helpers after copying (no restart needed).
+
 ## Voice topics
 
 Voice assistants are good at *answering*; a wall display is good at *showing*.
