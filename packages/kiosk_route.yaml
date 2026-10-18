@@ -1,0 +1,74 @@
+# =============================================================================
+# kiosk_route.yaml
+# Show one persistent full-screen page (a navigation route) on the kiosk and keep the rotation off it until it is closed.
+#
+#   script.kiosk_route_show   pause rotation, mark a route active, navigate the target browser to the route dashboard
+#   script.kiosk_route_close  clear the flag and resume rotation (advances to the next dashboard)
+#
+# While input_boolean.kiosk_route_active is on, the rotator's timer, auto-resume, start-on-HA-start automations and dashboard_show do nothing, so camera popups
+# (which pause and then unpause rotation) and voice topics cannot navigate the kiosk away. Popups are overlays on the current page and are left alone: when
+# one closes the route page is simply visible again. The flag is restored across HA restarts. If the kiosk browser reloads or reconnects onto a different
+# page while a route is active, it is navigated back to the route page.
+#
+# The page at route_path is a dashboard whose only card is an iframe of the route viewer (kiosk-route/ in the Nina repo); it is created by the owner, not
+# here, because its URL contains a signed link that must not be published. Set Route Dashboard Path to it.
+# =============================================================================
+
+input_boolean:
+  kiosk_route_active:
+    name: "Kiosk Route Active"
+    icon: mdi:map-marker-path
+
+input_text:
+  kiosk_route_path:
+    name: "Kiosk Route Dashboard Path"
+    initial: "/kiosk-route/route"
+    max: 100
+
+script:
+  kiosk_route_show:
+    alias: "[Kiosk] Show route"
+    mode: restart
+    sequence:
+      - variables:
+          browser_id: "{{ states('input_text.dashboard_manager_target_browser') | trim }}"
+          path: "{{ states('input_text.kiosk_route_path') | trim }}"
+      - condition: template
+        value_template: "{{ browser_id | length > 0 and path.startswith('/') }}"
+      - service: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.kiosk_route_active
+      - service: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.dashboard_rotation_paused
+      - service: browser_mod.navigate
+        data:
+          browser_id: "{{ browser_id }}"
+          path: "{{ path }}"
+
+  kiosk_route_close:
+    alias: "[Kiosk] Close route"
+    mode: restart
+    sequence:
+      - service: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.kiosk_route_active
+      - service: script.dashboard_rotation_resume
+
+automation:
+  - id: kiosk_route_return_after_reconnect
+    alias: "[Kiosk] Return to the route page after a reload or reconnect"
+    mode: single
+    trigger:
+      - platform: template
+        value_template: >
+          {% set b = states('input_text.dashboard_manager_target_browser') | trim %}
+          {% set p = states('sensor.' ~ b ~ '_browser_path') %}
+          {{ b != '' and is_state('input_boolean.kiosk_route_active', 'on')
+             and p not in ['unavailable', 'unknown', states('input_text.kiosk_route_path')] }}
+        for: "00:00:10"
+    action:
+      - service: browser_mod.navigate
+        data:
+          browser_id: "{{ states('input_text.dashboard_manager_target_browser') | trim }}"
+          path: "{{ states('input_text.kiosk_route_path') | trim }}"
