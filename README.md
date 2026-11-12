@@ -32,11 +32,12 @@ Copy the package files from `packages/` to `/config/packages/`:
 - `dashboard_manager_core.yaml`
 - `dashboard_manager_persistence.yaml`
 - `dashboard_manager_rotator.yaml`
+- `dashboard_manager_kiosk_management.yaml`
 - `dashboard_shell_commands.yaml`
 - `dashboard_manager_voice.yaml` (optional - only needed for [Voice topics](#voice-topics) / `script.dashboard_show`)
 
-Also copy `dashboard_manager/read_rotation.sh` to `/config/dashboard_manager/`
-and make it executable (`chmod +x`) — the persistence sensor shells out to it.
+Copy `dashboard_manager/kiosk_playlist.py` to `/config/dashboard_manager/`.
+Copy `dashboard_manager/read_rotation.sh` there as well and make it executable (`chmod +x`) — the persistence sensor shells out to it.
 
 Ensure your `configuration.yaml` includes:
 ```yaml
@@ -66,7 +67,7 @@ The dashboard enumeration sensor reads `/config/.storage/lovelace_dashboards` vi
 
 ### 4. Set your browser ID
 
-In the Dashboard Manager UI, set **Target Browser ID** to match your kiosk's browser_mod ID. This identifies the primary kiosk for server-side navigation. See [Multiple kiosks](#multiple-kiosks) to add other displays. Find your browser's ID at **Settings → Devices & Services → Browser Mod**.
+In the Dashboard Manager UI, select a registered **Browser Mod ID** and click **Apply primary kiosk**. The list refreshes within a minute of registering a browser. **Active primary kiosk** shows the ID in use. See [Multiple kiosks](#multiple-kiosks) to add other displays. Find your browser's ID at **Settings → Devices & Services → Browser Mod**.
 
 ### 5. Add the nav overlay to your dashboards
 
@@ -82,7 +83,7 @@ After restart:
 
 ## Multiple kiosks
 
-The existing **Target Browser ID** is the primary kiosk. It keeps the existing
+**Active primary kiosk** shows the current primary kiosk. It keeps the existing
 manager controls, voice topics, route override, and navbar countdown. Each
 additional kiosk runs its own rotation and can be turned on or off from
 Dashboard Manager. It shares the primary playlist by default. Starting or
@@ -116,6 +117,22 @@ The existing navbar's timer, pause, and stop controls still use the primary
 rotation state. Use **Additional Kiosks** to start or stop the other rotations.
 Kiosk rotations skip voice-only entries. A playlist edit restarts the
 additional kiosks that use that list at its first rotating page.
+
+### Copy dashboards to a new kiosk
+
+Create a **Dropdown** helper with an ID such as
+`input_select.dashboard_manager_playlist_n5105` and one placeholder option,
+`No dashboards configured`. Select this helper as the new kiosk's
+**Rotation list** in its blueprint automation. A kiosk using the shared list
+continues to follow edits to that list.
+
+In **Copy Dashboards**, choose the shared rotation or another kiosk playlist as
+the source and select the new kiosk's helper as the destination. **Copy
+dashboards** replaces the destination list, preserving entry order, durations,
+and voice settings. Each copy is saved in
+`/config/dashboard_manager/kiosk_playlists/` and restored on Home Assistant
+startup. The shared rotation can be used as a source. The existing dashboard
+editing controls manage the shared list.
 
 ## Nav overlay
 

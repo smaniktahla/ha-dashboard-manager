@@ -8,3 +8,8 @@
 
 shell_command:
   write_dashboard_rotation: sh -c 'printf "%s" "$0" > /config/dashboard_rotation.txt' "{{ content }}"
+
+  dashboard_manager_read_kiosk_playlist: >-
+    python3 /config/dashboard_manager/kiosk_playlist.py read {{ playlist }}
+  dashboard_manager_write_kiosk_playlist: >-
+    python3 /config/dashboard_manager/kiosk_playlist.py write {{ playlist }} {{ payload }}

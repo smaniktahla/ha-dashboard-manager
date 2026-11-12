@@ -33,7 +33,18 @@ views:
             show_header_toggle: false
             entities:
               - entity: input_text.dashboard_manager_target_browser
-                name: Primary Kiosk Browser ID
+                type: simple-entity
+                name: Active primary kiosk
+              - entity: input_select.dashboard_manager_browser_picker
+                name: Browser Mod ID
+            footer:
+              type: buttons
+              entities:
+                - entity: script.dashboard_manager_apply_browser
+                  name: Apply primary kiosk
+                  tap_action:
+                    action: call-service
+                    service: script.dashboard_manager_apply_browser
 
           - type: custom:auto-entities
             card:
@@ -46,6 +57,23 @@ views:
             sort:
               method: name
             show_empty: false
+
+          - type: entities
+            title: Copy Dashboards
+            show_header_toggle: false
+            entities:
+              - entity: input_select.dashboard_manager_copy_source
+              - entity: input_select.dashboard_manager_copy_destination
+            footer:
+              type: buttons
+              entities:
+                - entity: script.dashboard_manager_copy_kiosk_playlist
+                  name: Copy dashboards
+                  tap_action:
+                    action: call-service
+                    service: script.dashboard_manager_copy_kiosk_playlist
+                    confirmation:
+                      text: Replace the destination kiosk's playlist with a copy of the source?
 
           - type: markdown
             content: |
