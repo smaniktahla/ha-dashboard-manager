@@ -22,6 +22,7 @@ Automatic kiosk rotation manager for Home Assistant. Rotate through dashboards o
 | card-mod | UI card styling |
 | navbar-card | Nav overlay — see [dashboards/navbar_card_snippet.yaml](dashboards/navbar_card_snippet.yaml) |
 | custom:button-card | Toggle switch on the Dashboard Manager UI itself |
+| auto-entities | Show individual kiosk switches in the manager dashboard |
 
 ## Installation
 
@@ -65,7 +66,7 @@ The dashboard enumeration sensor reads `/config/.storage/lovelace_dashboards` vi
 
 ### 4. Set your browser ID
 
-In the Dashboard Manager UI, set **Target Browser ID** to match your kiosk's browser_mod ID (default: `kitchen_kiosk`). This is only used for the *automatic* timer-driven rotation on that one unattended display — it has nothing to do with the nav overlay below, which controls whichever screen you're looking at directly. Find your browser's ID at **Settings → Devices & Services → Browser Mod**.
+In the Dashboard Manager UI, set **Target Browser ID** to match your kiosk's browser_mod ID. This identifies the primary kiosk for server-side navigation. See [Multiple kiosks](#multiple-kiosks) to add other displays. Find your browser's ID at **Settings → Devices & Services → Browser Mod**.
 
 ### 5. Add the nav overlay to your dashboards
 
@@ -78,6 +79,43 @@ Paste the card from [`dashboards/navbar_card_snippet.yaml`](dashboards/navbar_ca
 After restart:
 - Add dashboards via the UI; each change auto-saves to `/config/dashboard_rotation.txt` ~2 seconds later
 - On the next boot the rotation list is restored automatically, and rotation auto-starts if it was enabled (and not paused)
+
+## Multiple kiosks
+
+The existing **Target Browser ID** is the primary kiosk. It keeps the existing
+manager controls, voice topics, route override, and navbar countdown. Each
+additional kiosk runs its own rotation and can be turned on or off from
+Dashboard Manager. It shares the primary playlist by default. Starting or
+stopping an additional kiosk does not change the primary kiosk or any other
+rotation.
+
+1. In the kiosk's signed-in browser, open **Browser Mod** in the Home Assistant
+   sidebar and register the browser. Set its Browser ID to the kiosk hostname,
+   preserving case. For example, open Home Assistant on that kiosk with
+   `?BrowserID=N5105` and confirm that Browser Mod shows `N5105`. Browser Mod
+   assigns IDs to browser sessions. If you want to keep an existing Browser Mod
+   ID, enter it in the blueprint's **Browser Mod ID override** field.
+2. Copy [the automation blueprint](blueprints/automation/dashboard_manager/kiosk_rotation.yaml)
+   to `/config/blueprints/automation/dashboard_manager/kiosk_rotation.yaml`.
+   Reload automations. Create a separate **Toggle** helper for each kiosk with
+   an entity ID such as `input_boolean.dashboard_manager_kiosk_n5105`.
+3. In **Settings → Automations & Scenes → Blueprints**, create one automation
+   from **Dashboard Manager kiosk rotation** for each additional kiosk. Enter
+   its hostname and select its Toggle helper. Leave **Rotation list** on
+   `input_select.dashboard_rotation` to share the manager playlist, or choose
+   another input select with the same `Label | /path | seconds` options.
+   Every kiosk needs a distinct Browser Mod ID, including the primary kiosk.
+4. Install [auto-entities](https://github.com/thomasloven/lovelace-auto-entities)
+   through HACS for the manager's **Additional Kiosks** card. Turn on each
+   kiosk there, or use its Toggle helper directly from Home Assistant. The
+   helper's entity ID must start with `input_boolean.dashboard_manager_kiosk_`
+   to appear on the card. After creating the automation, toggle the helper on
+   to start its first rotation.
+
+The existing navbar's timer, pause, and stop controls still use the primary
+rotation state. Use **Additional Kiosks** to start or stop the other rotations.
+Kiosk rotations skip voice-only entries. A playlist edit restarts the
+additional kiosks that use that list at its first rotating page.
 
 ## Nav overlay
 
