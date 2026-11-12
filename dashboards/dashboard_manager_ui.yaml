@@ -328,3 +328,15 @@ views:
             name: Target Browser ID
           - entity: input_boolean.dashboard_manager_verbose
             name: Verbose Notifications
+
+      - type: custom:auto-entities
+        card:
+          type: entities
+          title: Additional Kiosks
+          show_header_toggle: false
+        filter:
+          include:
+            - entity_id: "input_boolean.dashboard_manager_kiosk_*"
+        sort:
+          method: name
+        show_empty: false

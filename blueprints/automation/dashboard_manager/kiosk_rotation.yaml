@@ -1,0 +1,89 @@
+blueprint:
+  name: Dashboard Manager kiosk rotation
+  description: Rotate one registered Browser Mod browser on its own schedule.
+  domain: automation
+  input:
+    hostname:
+      name: Kiosk hostname
+      description: Use the hostname as registered in Browser Mod, for example N5105.
+      selector:
+        text:
+    browser_id:
+      name: Browser Mod ID override
+      description: Leave blank to target the hostname. Enter the exact Browser Mod ID if it differs.
+      default: ""
+      selector:
+        text:
+    enabled:
+      name: Rotation switch
+      description: Create a separate Toggle helper for each kiosk.
+      selector:
+        entity:
+          filter:
+            - domain: input_boolean
+    playlist:
+      name: Rotation list
+      description: Use Dashboard Manager's shared list, or choose another dropdown with the same entry format.
+      default: input_select.dashboard_rotation
+      selector:
+        entity:
+          filter:
+            - domain: input_select
+
+mode: restart
+
+trigger:
+  - platform: homeassistant
+    event: start
+  - platform: state
+    entity_id: !input enabled
+    to: null
+  - platform: state
+    entity_id: !input playlist
+    attribute: options
+  - platform: state
+    entity_id: input_text.dashboard_manager_target_browser
+    to: null
+
+action:
+  - variables:
+      rotation_switch: !input enabled
+      playlist_entity: !input playlist
+      kiosk_hostname: !input hostname
+      browser_override: !input browser_id
+  - variables:
+      browser: "{{ (browser_override | trim) or (kiosk_hostname | trim) }}"
+      pages: >-
+        {%- set ns = namespace(pages=[]) -%}
+        {%- for entry in state_attr(playlist_entity, 'options') or [] -%}
+          {%- set parts = entry.split(' | ') -%}
+          {%- if parts | length >= 2 -%}
+            {%- set path = parts[1] | trim -%}
+            {%- set seconds = parts[2] | trim | int(30) if parts | length >= 3 else 30 -%}
+            {%- if path.startswith('/') and not path.startswith('//') and seconds > 0 -%}
+              {%- set ns.pages = ns.pages + [{'path': path, 'seconds': seconds}] -%}
+            {%- endif -%}
+          {%- endif -%}
+        {%- endfor -%}
+        {{- ns.pages -}}
+  # An off trigger must reach this action so restart mode cancels the old loop.
+  - condition: template
+    value_template: >-
+      {{ is_state(rotation_switch, 'on') and pages | length > 0
+         and browser not in ['', 'unknown', 'unavailable']
+         and browser != states('input_text.dashboard_manager_target_browser') | trim }}
+  - repeat:
+      while:
+        - condition: template
+          value_template: "{{ is_state(rotation_switch, 'on') }}"
+      sequence:
+        - repeat:
+            for_each: "{{ pages }}"
+            sequence:
+              - service: browser_mod.navigate
+                continue_on_error: true
+                data:
+                  browser_id: "{{ [browser] }}"
+                  path: "{{ repeat.item.path }}"
+              - delay:
+                  seconds: "{{ repeat.item.seconds }}"
