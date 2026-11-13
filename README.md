@@ -67,7 +67,11 @@ The dashboard enumeration sensor reads `/config/.storage/lovelace_dashboards` vi
 
 ### 4. Set your browser ID
 
-In the Dashboard Manager UI, select a registered **Browser Mod ID** and click **Apply primary kiosk**. The list refreshes within a minute of registering a browser. **Active primary kiosk** shows the ID in use. See [Multiple kiosks](#multiple-kiosks) to add other displays. Find your browser's ID at **Settings → Devices & Services → Browser Mod**.
+Set `input_text.dashboard_manager_target_browser` to the Browser Mod ID of
+the kiosk using the original rotation. **Kiosk to manage** lists registered
+browsers and selects which kiosk's controls are displayed. **Make selected
+kiosk primary** changes the default source for inherited dashboard durations
+and bulk additions.
 
 ### 5. Add the nav overlay to your dashboards
 
@@ -83,7 +87,7 @@ After restart:
 
 ## Multiple kiosks
 
-**Active primary kiosk** shows the current primary kiosk. It keeps the existing
+The original rotation uses its configured Browser Mod target. It keeps the existing
 manager controls, voice topics, route override, and navbar countdown. Each
 additional kiosk runs its own rotation and can be turned on or off from
 Dashboard Manager. It shares the primary playlist by default. Starting or
@@ -107,32 +111,33 @@ rotation.
    another input select with the same `Label | /path | seconds` options.
    Every kiosk needs a distinct Browser Mod ID, including the primary kiosk.
 4. Install [auto-entities](https://github.com/thomasloven/lovelace-auto-entities)
-   through HACS for the manager's **Additional Kiosks** card. Turn on each
-   kiosk there, or use its Toggle helper directly from Home Assistant. The
+   through HACS for the **Manage Selected Kiosk** card. Turn on each
+   kiosk from that card, or use its Toggle helper directly from Home Assistant. The
    helper's entity ID must start with `input_boolean.dashboard_manager_kiosk_`
    to appear on the card. After creating the automation, toggle the helper on
    to start its first rotation.
 
 The existing navbar's timer, pause, and stop controls still use the primary
-rotation state. Use **Additional Kiosks** to start or stop the other rotations.
+rotation state. Use **Manage Selected Kiosk** to start or stop the other rotations.
 Kiosk rotations skip voice-only entries. A playlist edit restarts the
 additional kiosks that use that list at its first rotating page.
 
-### Copy dashboards to a new kiosk
+### Set up a separate playlist for a kiosk
 
-Create a **Dropdown** helper with an ID such as
-`input_select.dashboard_manager_playlist_n5105` and one placeholder option,
-`No dashboards configured`. Select this helper as the new kiosk's
-**Rotation list** in its blueprint automation. A kiosk using the shared list
-continues to follow edits to that list.
+Create a Dropdown helper named `input_select.dashboard_manager_playlist_n5105`
+with the option `No dashboards configured`, replacing `n5105` with the
+lowercase Browser Mod ID. Replace runs of characters outside letters,
+digits, and underscores with an underscore. Use the same suffix on the
+kiosk's rotation switch, for example
+`input_boolean.dashboard_manager_kiosk_n5105`. Select both helpers in
+the kiosk's rotation blueprint.
 
-In **Copy Dashboards**, choose the shared rotation or another kiosk playlist as
-the source and select the new kiosk's helper as the destination. **Copy
-dashboards** replaces the destination list, preserving entry order, durations,
-and voice settings. Each copy is saved in
-`/config/dashboard_manager/kiosk_playlists/` and restored on Home Assistant
-startup. The shared rotation can be used as a source. The existing dashboard
-editing controls manage the shared list.
+Pick the kiosk in **Kiosk to manage**. In **Add All Dashboards**, choose the
+primary kiosk or another playlist as the source. **Add all dashboards** adds
+missing paths in source order, carrying over each entry's display duration
+and metadata. Existing entries keep their settings. Adding a path manually
+inherits the primary kiosk's entry when the paths match. Playlists are
+saved separately and restored at startup.
 
 ## Nav overlay
 

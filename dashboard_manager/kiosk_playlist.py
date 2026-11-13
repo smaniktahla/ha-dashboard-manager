@@ -28,10 +28,10 @@ def main():
     if not args.payload:
         parser.error("write requires a playlist payload")
     entries = json.loads(base64.b64decode(args.payload, validate=True))
-    if not isinstance(entries, list) or not entries or not all(
+    if not isinstance(entries, list) or not all(
         isinstance(entry, str) and entry for entry in entries
     ):
-        parser.error("playlist must contain a nonempty list of dashboard entries")
+        parser.error("playlist must contain a list of dashboard entries")
 
     path.parent.mkdir(exist_ok=True)
     with tempfile.NamedTemporaryFile(
