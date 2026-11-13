@@ -77,7 +77,7 @@ views:
               content: |
                 {% set kiosk = states('sensor.dashboard_manager_selected_kiosk') %}
                 {% set suffix = state_attr('sensor.dashboard_manager_selected_kiosk', 'suffix') %}
-                {% set playlist = state_attr('sensor.dashboard_manager_selected_kiosk', 'playlist') %}
+                {% set playlist = state_attr('sensor.dashboard_manager_selected_kiosk', 'playlist') or '' %}
                 **{{ kiosk }}** · {{ 'Rotation enabled' if is_state('input_boolean.dashboard_manager_kiosk_' ~ suffix, 'on') else 'Stopped' }}
 
                 {% if not has_value(playlist) %}
@@ -94,7 +94,7 @@ views:
               filter:
                 template: |
                   {% set suffix = state_attr('sensor.dashboard_manager_selected_kiosk', 'suffix') %}
-                  {% set playlist = state_attr('sensor.dashboard_manager_selected_kiosk', 'playlist') %}
+                  {% set playlist = state_attr('sensor.dashboard_manager_selected_kiosk', 'playlist') or '' %}
                   {{ ['input_boolean.dashboard_manager_kiosk_' ~ suffix, playlist] | select('has_value') | list | to_json }}
               show_empty: false
             - type: entities
@@ -162,35 +162,35 @@ views:
           - entity: binary_sensor.dashboard_manager_legacy_kiosk_selected
             state: "on"
         card:
-          - type: horizontal-stack
-            cards:
-              - type: button
-                name: Previous
-                icon: mdi:skip-previous
-                tap_action:
-                  action: call-service
-                  service: script.dashboard_nav_previous
+          type: horizontal-stack
+          cards:
+            - type: button
+              name: Previous
+              icon: mdi:skip-previous
+              tap_action:
+                action: call-service
+                service: script.dashboard_nav_previous
 
-              - type: button
-                entity: input_boolean.dashboard_rotation_paused
-                name: Play/Pause
-                icon: mdi:play-pause
-                tap_action:
-                  action: toggle
+            - type: button
+              entity: input_boolean.dashboard_rotation_paused
+              name: Play/Pause
+              icon: mdi:play-pause
+              tap_action:
+                action: toggle
 
-              - type: button
-                name: Next
-                icon: mdi:skip-next
-                tap_action:
-                  action: call-service
-                  service: script.dashboard_nav_next
+            - type: button
+              name: Next
+              icon: mdi:skip-next
+              tap_action:
+                action: call-service
+                service: script.dashboard_nav_next
 
-              - type: button
-                name: Stop
-                icon: mdi:stop
-                tap_action:
-                  action: call-service
-                  service: script.dashboard_rotation_stop
+            - type: button
+              name: Stop
+              icon: mdi:stop
+              tap_action:
+                action: call-service
+                service: script.dashboard_rotation_stop
 
           # -----------------------------------------------------------------------
           # Rotation status
@@ -200,29 +200,29 @@ views:
           - entity: binary_sensor.dashboard_manager_legacy_kiosk_selected
             state: "on"
         card:
-          - type: entities
-            title: Rotation Status
-            show_header_toggle: false
+          type: entities
+          title: Rotation Status
+          show_header_toggle: false
+          entities:
+            - entity: input_boolean.dashboard_rotation_enabled
+              name: Rotation Enabled
+            - entity: input_boolean.dashboard_rotation_paused
+              name: Paused
+            - entity: timer.dashboard_rotation_timer
+              name: Time Until Next
+            - entity: timer.dashboard_autoresume_timer
+              name: Auto-Resume Timer
+            - entity: sensor.kitchen_kiosk_browser_path
+              name: Kiosk Current Path
+          footer:
+            type: buttons
             entities:
-              - entity: input_boolean.dashboard_rotation_enabled
-                name: Rotation Enabled
-              - entity: input_boolean.dashboard_rotation_paused
-                name: Paused
-              - entity: timer.dashboard_rotation_timer
-                name: Time Until Next
-              - entity: timer.dashboard_autoresume_timer
-                name: Auto-Resume Timer
-              - entity: sensor.kitchen_kiosk_browser_path
-                name: Kiosk Current Path
-            footer:
-              type: buttons
-              entities:
-                - entity: script.dashboard_rotation_start
-                  name: Start
-                  icon: mdi:play
-                - entity: script.dashboard_rotation_stop
-                  name: Stop
-                  icon: mdi:stop
+              - entity: script.dashboard_rotation_start
+                name: Start
+                icon: mdi:play
+              - entity: script.dashboard_rotation_stop
+                name: Stop
+                icon: mdi:stop
 
           # -----------------------------------------------------------------------
           # Add from available dashboards (enumerated from HA)
@@ -232,33 +232,33 @@ views:
           - entity: binary_sensor.dashboard_manager_legacy_kiosk_selected
             state: "on"
         card:
-          - type: entities
-            title: Add Dashboard from HA
-            show_header_toggle: false
+          type: entities
+          title: Add Dashboard from HA
+          show_header_toggle: false
+          entities:
+            - entity: sensor.dashboard_manager_all_dashboards
+              name: Dashboards in HA
+            - entity: input_select.dashboard_available
+              name: Available to Add
+            - entity: input_number.dashboard_default_display_time
+              name: Default Display Time
+          footer:
+            type: buttons
             entities:
-              - entity: sensor.dashboard_manager_all_dashboards
-                name: Dashboards in HA
-              - entity: input_select.dashboard_available
-                name: Available to Add
-              - entity: input_number.dashboard_default_display_time
-                name: Default Display Time
-            footer:
-              type: buttons
-              entities:
-                - entity: script.dashboard_add_from_available
-                  name: Add to Rotation
-                  icon: mdi:plus-circle
-                - entity: script.dashboard_add_from_available
-                  name: Add Voice-Only
-                  icon: mdi:microphone-plus
-                  tap_action:
-                    action: call-service
-                    service: script.dashboard_add_from_available
-                    data:
-                      voice_only: true
-                - entity: script.dashboard_manager_load_from_json
-                  name: Reload from File
-                  icon: mdi:refresh
+              - entity: script.dashboard_add_from_available
+                name: Add to Rotation
+                icon: mdi:plus-circle
+              - entity: script.dashboard_add_from_available
+                name: Add Voice-Only
+                icon: mdi:microphone-plus
+                tap_action:
+                  action: call-service
+                  service: script.dashboard_add_from_available
+                  data:
+                    voice_only: true
+              - entity: script.dashboard_manager_load_from_json
+                name: Reload from File
+                icon: mdi:refresh
 
           # -----------------------------------------------------------------------
           # Add dashboard manually (custom path)
@@ -268,22 +268,22 @@ views:
           - entity: binary_sensor.dashboard_manager_legacy_kiosk_selected
             state: "on"
         card:
-          - type: entities
-            title: Add Dashboard Manually
-            show_header_toggle: false
+          type: entities
+          title: Add Dashboard Manually
+          show_header_toggle: false
+          entities:
+            - entity: input_text.dashboard_manager_new_label
+              name: Label
+            - entity: input_text.dashboard_manager_new_path
+              name: Path (e.g. /dashboard-weather/0)
+            - entity: input_text.dashboard_manager_new_display_time
+              name: Display Time (seconds, 0 = voice-only)
+          footer:
+            type: buttons
             entities:
-              - entity: input_text.dashboard_manager_new_label
-                name: Label
-              - entity: input_text.dashboard_manager_new_path
-                name: Path (e.g. /dashboard-weather/0)
-              - entity: input_text.dashboard_manager_new_display_time
-                name: Display Time (seconds, 0 = voice-only)
-            footer:
-              type: buttons
-              entities:
-                - entity: script.dashboard_rotation_add
-                  name: Add
-                  icon: mdi:plus
+              - entity: script.dashboard_rotation_add
+                name: Add
+                icon: mdi:plus
 
           # -----------------------------------------------------------------------
           # Current rotation — details & controls for selected dashboard
@@ -293,82 +293,82 @@ views:
           - entity: binary_sensor.dashboard_manager_legacy_kiosk_selected
             state: "on"
         card:
-          - type: vertical-stack
-            cards:
-              - type: entities
-                title: Manage Selected Dashboard
-                show_header_toggle: false
+          type: vertical-stack
+          cards:
+            - type: entities
+              title: Manage Selected Dashboard
+              show_header_toggle: false
+              entities:
+                - entity: input_select.dashboard_rotation
+                  name: Selected Dashboard
+                - entity: input_text.dashboard_manager_topics
+                  name: Voice topics (comma-separated, one dashboard per topic)
+                - entity: input_number.dashboard_manager_voice_hold
+                  name: Voice hold (seconds, 0 = stay until resumed)
+              footer:
+                type: buttons
                 entities:
-                  - entity: input_select.dashboard_rotation
-                    name: Selected Dashboard
-                  - entity: input_text.dashboard_manager_topics
-                    name: Voice topics (comma-separated, one dashboard per topic)
-                  - entity: input_number.dashboard_manager_voice_hold
-                    name: Voice hold (seconds, 0 = stay until resumed)
-                footer:
-                  type: buttons
-                  entities:
-                    - entity: script.dashboard_nav_jump
-                      name: Jump
-                      icon: mdi:television-play
-                    - entity: script.dashboard_rotation_set_topics
-                      name: Save Voice Settings
-                      icon: mdi:microphone-message
-                    - entity: script.dashboard_rotation_toggle_voice_only
-                      name: Voice-Only
-                      icon: mdi:microphone-off
-                    - entity: script.dashboard_rotation_remove
-                      name: Remove
-                      icon: mdi:delete
+                  - entity: script.dashboard_nav_jump
+                    name: Jump
+                    icon: mdi:television-play
+                  - entity: script.dashboard_rotation_set_topics
+                    name: Save Voice Settings
+                    icon: mdi:microphone-message
+                  - entity: script.dashboard_rotation_toggle_voice_only
+                    name: Voice-Only
+                    icon: mdi:microphone-off
+                  - entity: script.dashboard_rotation_remove
+                    name: Remove
+                    icon: mdi:delete
 
-              - type: custom:button-card
-                entity: input_select.dashboard_rotation
-                name: Nav Bar on This Dashboard
-                show_name: true
-                show_icon: true
-                show_state: false
-                icon: >
-                  [[[
-                    const parts = (entity.state || '').split(' | ');
-                    const show = parts.length > 3 ? parts[3].trim().toLowerCase() !== 'false' : true;
-                    return show ? 'mdi:toggle-switch' : 'mdi:toggle-switch-off-outline';
-                  ]]]
-                tap_action:
-                  action: call-service
-                  service: script.dashboard_rotation_toggle_nav
-                styles:
-                  card:
-                    - display: flex
-                    - flex-direction: row
-                    - justify-content: space-between
-                    - align-items: center
-                    - padding: 0 16px
-                    - height: 56px
-                  name:
-                    - font-size: 14px
-                  icon:
-                    - width: 40px
-                    - color: >
-                        [[[
-                          const parts = (entity.state || '').split(' | ');
-                          const show = parts.length > 3 ? parts[3].trim().toLowerCase() !== 'false' : true;
-                          return show ? '#22c55e' : '#64748b';
-                        ]]]
+            - type: custom:button-card
+              entity: input_select.dashboard_rotation
+              name: Nav Bar on This Dashboard
+              show_name: true
+              show_icon: true
+              show_state: false
+              icon: >
+                [[[
+                  const parts = (entity.state || '').split(' | ');
+                  const show = parts.length > 3 ? parts[3].trim().toLowerCase() !== 'false' : true;
+                  return show ? 'mdi:toggle-switch' : 'mdi:toggle-switch-off-outline';
+                ]]]
+              tap_action:
+                action: call-service
+                service: script.dashboard_rotation_toggle_nav
+              styles:
+                card:
+                  - display: flex
+                  - flex-direction: row
+                  - justify-content: space-between
+                  - align-items: center
+                  - padding: 0 16px
+                  - height: 56px
+                name:
+                  - font-size: 14px
+                icon:
+                  - width: 40px
+                  - color: >
+                      [[[
+                        const parts = (entity.state || '').split(' | ');
+                        const show = parts.length > 3 ? parts[3].trim().toLowerCase() !== 'false' : true;
+                        return show ? '#22c55e' : '#64748b';
+                      ]]]
 
-              - type: markdown
-                title: Current Displayed
-                content: >
-                  {% set sel = states('input_select.dashboard_rotation') %}
-                  {% if sel and 'No dashboards' not in sel %}
-                    {% set parts = sel.split(' | ') %}
-                    **{{ parts[0] | trim }}**
-                    Path: `{{ parts[1] | trim if parts | length > 1 else '?' }}`
-                    Display time: {{ 'voice-only (not in rotation)' if parts | length > 2 and parts[2] | trim == '0' else (parts[2] | trim if parts | length > 2 else '30') ~ 's' }}
-                    Voice topics: {{ parts[4] | trim if parts | length > 4 and parts[4] | trim != '' else '_none_' }}
-                    Voice hold: {{ ('until resumed' if parts[5] | trim == '0' else parts[5] | trim ~ 's') if parts | length > 5 else '45s (default)' }}
-                  {% else %}
-                    _No dashboard selected_
-                  {% endif %}
+            - type: markdown
+              title: Current Displayed
+              content: >
+                {% set sel = states('input_select.dashboard_rotation') %}
+                {% if sel and 'No dashboards' not in sel %}
+                  {% set parts = sel.split(' | ') %}
+                  **{{ parts[0] | trim }}**
+                  Path: `{{ parts[1] | trim if parts | length > 1 else '?' }}`
+                  Display time: {{ 'voice-only (not in rotation)' if parts | length > 2 and parts[2] | trim == '0' else (parts[2] | trim if parts | length > 2 else '30') ~ 's' }}
+                  Voice topics: {{ parts[4] | trim if parts | length > 4 and parts[4] | trim != '' else '_none_' }}
+                  Voice hold: {{ ('until resumed' if parts[5] | trim == '0' else parts[5] | trim ~ 's') if parts | length > 5 else '45s (default)' }}
+                {% else %}
+                  _No dashboard selected_
+                {% endif %}
 
           # -----------------------------------------------------------------------
           # Reorder
@@ -378,21 +378,21 @@ views:
           - entity: binary_sensor.dashboard_manager_legacy_kiosk_selected
             state: "on"
         card:
-          - type: horizontal-stack
-            cards:
-              - type: button
-                name: Move Up
-                icon: mdi:arrow-up
-                tap_action:
-                  action: call-service
-                  service: script.dashboard_rotation_move_up
+          type: horizontal-stack
+          cards:
+            - type: button
+              name: Move Up
+              icon: mdi:arrow-up
+              tap_action:
+                action: call-service
+                service: script.dashboard_rotation_move_up
 
-              - type: button
-                name: Move Down
-                icon: mdi:arrow-down
-                tap_action:
-                  action: call-service
-                  service: script.dashboard_rotation_move_down
+            - type: button
+              name: Move Down
+              icon: mdi:arrow-down
+              tap_action:
+                action: call-service
+                service: script.dashboard_rotation_move_down
 
           # -----------------------------------------------------------------------
           # Update display time for selected dashboard
@@ -402,54 +402,54 @@ views:
           - entity: binary_sensor.dashboard_manager_legacy_kiosk_selected
             state: "on"
         card:
-          - type: vertical-stack
-            cards:
-              - type: entities
-                title: Set Display Time for Selected
-                show_header_toggle: false
-                entities:
-                  - entity: input_text.dashboard_manager_new_display_time
-                    name: Custom (seconds)
+          type: vertical-stack
+          cards:
+            - type: entities
+              title: Set Display Time for Selected
+              show_header_toggle: false
+              entities:
+                - entity: input_text.dashboard_manager_new_display_time
+                  name: Custom (seconds)
 
-              - type: horizontal-stack
-                cards:
-                  - type: button
-                    name: 15s
-                    tap_action:
-                      action: call-service
-                      service: script.dashboard_rotation_update_time
-                      service_data: {new_time: 15}
+            - type: horizontal-stack
+              cards:
+                - type: button
+                  name: 15s
+                  tap_action:
+                    action: call-service
+                    service: script.dashboard_rotation_update_time
+                    service_data: {new_time: 15}
 
-                  - type: button
-                    name: 30s
-                    tap_action:
-                      action: call-service
-                      service: script.dashboard_rotation_update_time
-                      service_data: {new_time: 30}
+                - type: button
+                  name: 30s
+                  tap_action:
+                    action: call-service
+                    service: script.dashboard_rotation_update_time
+                    service_data: {new_time: 30}
 
-                  - type: button
-                    name: 45s
-                    tap_action:
-                      action: call-service
-                      service: script.dashboard_rotation_update_time
-                      service_data: {new_time: 45}
+                - type: button
+                  name: 45s
+                  tap_action:
+                    action: call-service
+                    service: script.dashboard_rotation_update_time
+                    service_data: {new_time: 45}
 
-                  - type: button
-                    name: 60s
-                    tap_action:
-                      action: call-service
-                      service: script.dashboard_rotation_update_time
-                      service_data: {new_time: 60}
+                - type: button
+                  name: 60s
+                  tap_action:
+                    action: call-service
+                    service: script.dashboard_rotation_update_time
+                    service_data: {new_time: 60}
 
-              - type: button
-                name: Apply Custom Time
-                icon: mdi:clock-check
-                tap_action:
-                  action: call-service
-                  service: script.dashboard_rotation_update_time_from_input
-                card_mod:
-                  style: |
-                    ha-card { height: 56px; }
+            - type: button
+              name: Apply Custom Time
+              icon: mdi:clock-check
+              tap_action:
+                action: call-service
+                service: script.dashboard_rotation_update_time_from_input
+              card_mod:
+                style: |
+                  ha-card { height: 56px; }
 
           # -----------------------------------------------------------------------
           # Full rotation order
@@ -459,18 +459,18 @@ views:
           - entity: binary_sensor.dashboard_manager_legacy_kiosk_selected
             state: "on"
         card:
-          - type: markdown
-            title: Current Rotation Order
-            content: |
-              {% set opts = state_attr('input_select.dashboard_rotation', 'options') or [] %}
-              {%- if opts | length == 0 or 'No dashboards' in opts[0] %}
-              _No dashboards configured._
-              {%- else %}
-              {%- for o in opts %}
-              {%- set parts = o.split(' | ') %}
-              {{ loop.index }}. **{{ parts[0] | trim }}** — `{{ parts[1] | trim if parts | length > 1 else '?' }}` ({{ 'voice-only' if parts | length > 2 and parts[2] | trim == '0' else (parts[2] | trim if parts | length > 2 else '30') ~ 's' }}){{ ' 🎙 ' ~ parts[4] | trim if parts | length > 4 else '' }}
-              {%- endfor %}
-              {%- endif %}
+          type: markdown
+          title: Current Rotation Order
+          content: |
+            {% set opts = state_attr('input_select.dashboard_rotation', 'options') or [] %}
+            {%- if opts | length == 0 or 'No dashboards' in opts[0] %}
+            _No dashboards configured._
+            {%- else %}
+            {%- for o in opts %}
+            {%- set parts = o.split(' | ') %}
+            {{ loop.index }}. **{{ parts[0] | trim }}** — `{{ parts[1] | trim if parts | length > 1 else '?' }}` ({{ 'voice-only' if parts | length > 2 and parts[2] | trim == '0' else (parts[2] | trim if parts | length > 2 else '30') ~ 's' }}){{ ' 🎙 ' ~ parts[4] | trim if parts | length > 4 else '' }}
+            {%- endfor %}
+            {%- endif %}
 
           # -----------------------------------------------------------------------
           # Settings
@@ -480,9 +480,9 @@ views:
           - entity: binary_sensor.dashboard_manager_legacy_kiosk_selected
             state: "on"
         card:
-          - type: entities
-            title: Settings
-            show_header_toggle: false
-            entities:
-              - entity: input_boolean.dashboard_manager_verbose
-                name: Verbose Notifications
+          type: entities
+          title: Settings
+          show_header_toggle: false
+          entities:
+            - entity: input_boolean.dashboard_manager_verbose
+              name: Verbose Notifications
