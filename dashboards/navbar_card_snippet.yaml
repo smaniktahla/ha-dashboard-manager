@@ -176,28 +176,31 @@ routes:
       service: script.dashboard_rotation_stop
 
   - icon: mdi:timer-outline
-    # Shows "Stopped" while dashboard_rotation_enabled is off (checked first,
-    # so a leftover active auto-resume timer from an unrelated earlier pause
-    # can't be mistaken for a currently-running countdown). Otherwise shows
-    # the 30s rotation countdown normally, or falls back to the 5-min
-    # auto-resume countdown while paused (see dashboard_manager_rotator.yaml
-    # -- pausing calls timer.pause, not timer.cancel, so Play/Pause resumes
-    # from wherever the countdown was rather than restarting it).
+    # Read only the timer for this Browser Mod browser.
     label: |-
       [[[
+        const browserId = window.browser_mod?.browserID;
+        const primaryId = states['input_text.dashboard_manager_target_browser']?.state?.trim();
+        const format = (timer) => {
+          const end = Date.parse(timer.attributes.finishes_at);
+          if (!Number.isFinite(end)) return '';
+          const seconds = Math.max(0, Math.ceil((end - Date.now()) / 1000));
+          if (seconds >= 60) return Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's';
+          return seconds + 's';
+        };
+        if (!browserId) return '';
+        if (browserId !== primaryId) {
+          const suffix = browserId.toLowerCase().replace(/[^a-z0-9_]+/g, '_');
+          const timer = states['timer.dashboard_manager_kiosk_' + suffix];
+          return timer?.state === 'active' ? format(timer) : '';
+        }
         const enabled = states['input_boolean.dashboard_rotation_enabled'];
         if (enabled && enabled.state !== 'on') return 'Stopped';
-        const rot = states['timer.dashboard_rotation_timer'];
+        const rotation = states['timer.dashboard_rotation_timer'];
         const resume = states['timer.dashboard_autoresume_timer'];
-        const fmt = (t) => {
-          const secs = Math.max(0, Math.round((new Date(t.attributes.finishes_at) - new Date())/1000));
-          if (secs >= 60) return Math.floor(secs / 60) + 'm ' + (secs % 60) + 's';
-          return secs + 's';
-        };
-        if (rot && rot.state === 'active') return fmt(rot);
-        if (resume && resume.state === 'active') return fmt(resume);
-        if (!rot) return '';
-        return rot.state;
+        if (rotation?.state === 'active') return format(rotation);
+        if (resume?.state === 'active') return format(resume);
+        return rotation?.state ?? '';
       ]]]
     icon_color: "#94a3b8"
     hidden: *hidden_on_this_dashboard

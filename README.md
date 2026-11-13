@@ -112,7 +112,17 @@ rotation.
    to appear on the card. After creating the automation, toggle the helper on
    to start its first rotation.
 
-The existing navbar's timer, pause, and stop controls still use the primary
+For an additional kiosk countdown, create a dedicated **Timer** helper and
+select its entity ID in the blueprint's **Kiosk countdown timer** field.
+Use the entity ID pattern `timer.dashboard_manager_kiosk_<browser_id>`.
+Lowercase the Browser Mod ID and replace runs of characters outside
+letters, digits and underscores with an underscore. For `n5105`, use
+`timer.dashboard_manager_kiosk_n5105`. Give each kiosk a distinct timer and
+leave timer restoration disabled. Update the countdown route in each deployed
+navbar card from the snippet. Without a timer, the kiosk uses its existing
+rotation delay and its navbar leaves the countdown blank.
+
+The existing navbar's pause and stop controls still use the primary
 rotation state. Use **Additional Kiosks** to start or stop the other rotations.
 Kiosk rotations skip voice-only entries. A playlist edit restarts the
 additional kiosks that use that list at its first rotating page.
