@@ -21,6 +21,12 @@ blueprint:
         entity:
           filter:
             - domain: input_boolean
+    countdown_timer:
+      name: Kiosk countdown timer
+      description: Optional timer dedicated to this kiosk.
+      default: ""
+      selector:
+        text:
     playlist:
       name: Rotation list
       description: Use Dashboard Manager's shared list, or choose another dropdown with the same entry format.
@@ -47,6 +53,7 @@ trigger:
 
 action:
   - variables:
+      countdown: !input countdown_timer
       rotation_switch: !input enabled
       playlist_entity: !input playlist
       kiosk_hostname: !input hostname
@@ -66,6 +73,12 @@ action:
           {%- endif -%}
         {%- endfor -%}
         {{- ns.pages -}}
+  - if:
+      - "{{ countdown.startswith('timer.') and states(countdown) in ['active', 'paused'] }}"
+    then:
+      - service: timer.cancel
+        target:
+          entity_id: "{{ countdown }}"
   # An off trigger must reach this action so restart mode cancels the old loop.
   - condition: template
     value_template: >-
@@ -85,5 +98,15 @@ action:
                 data:
                   browser_id: "{{ [browser] }}"
                   path: "{{ repeat.item.path }}"
-              - delay:
-                  seconds: "{{ repeat.item.seconds }}"
+              - if:
+                  - "{{ countdown.startswith('timer.') and has_value(countdown) }}"
+                then:
+                  - service: timer.start
+                    target:
+                      entity_id: "{{ countdown }}"
+                    data:
+                      duration: "{{ repeat.item.seconds }}"
+                  - wait_template: "{{ not is_state(countdown, 'active') }}"
+                else:
+                  - delay:
+                      seconds: "{{ repeat.item.seconds }}"

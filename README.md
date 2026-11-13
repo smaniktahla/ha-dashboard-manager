@@ -122,6 +122,19 @@ rotation state. Use **Manage Selected Kiosk** to start or stop the other rotatio
 Kiosk rotations skip voice-only entries. A playlist edit restarts the
 additional kiosks that use that list at its first rotating page.
 
+### Show a kiosk countdown
+
+Create a dedicated Timer helper and enter its entity ID in the rotation
+blueprint's **Kiosk countdown timer** field. Use
+`timer.dashboard_manager_kiosk_<browser_id>` with the same suffix as the
+kiosk's rotation switch. For example, use `timer.dashboard_manager_kiosk_n5105`.
+Give each kiosk its own timer and leave timer restoration disabled.
+
+Update the countdown route in the deployed navbar cards from the current
+snippet. The timer uses the selected dashboard's playlist duration and
+advances the rotation when it expires. Without a timer, rotation uses its
+existing delay and the additional kiosk's countdown is blank.
+
 ### Set up a separate playlist for a kiosk
 
 Create a Dropdown helper named `input_select.dashboard_manager_playlist_n5105`
