@@ -1,0 +1,284 @@
+input_text:
+  dashboard_manager_primary_kiosk:
+    name: Designated primary kiosk
+    max: 255
+
+input_select:
+  dashboard_manager_browser_picker:
+    name: Kiosk to manage
+    options: ["No registered browsers"]
+  dashboard_manager_copy_source:
+    name: Copy dashboards from
+    options: ["Primary kiosk"]
+
+template:
+  - binary_sensor:
+      - name: Dashboard Manager Legacy Kiosk Selected
+        unique_id: dashboard_manager_legacy_kiosk_selected
+        state: >-
+          {{ is_state('input_select.dashboard_manager_browser_picker',
+                      states('input_text.dashboard_manager_target_browser')) }}
+  - sensor:
+      - name: Dashboard Manager Selected Kiosk
+        unique_id: dashboard_manager_selected_kiosk
+        state: "{{ states('input_select.dashboard_manager_browser_picker') }}"
+        attributes:
+          suffix: >-
+            {{ states('input_select.dashboard_manager_browser_picker')
+               | lower | regex_replace('[^a-z0-9_]+', '_') }}
+          playlist: >-
+            {% set kiosk = states('input_select.dashboard_manager_browser_picker') %}
+            {{ 'input_select.dashboard_rotation' if is_state('input_text.dashboard_manager_target_browser', kiosk)
+               else 'input_select.dashboard_manager_playlist_' ~
+                    (kiosk | lower | regex_replace('[^a-z0-9_]+', '_')) }}
+  - trigger:
+      - platform: homeassistant
+        event: start
+      - platform: time_pattern
+        minutes: "/1"
+    sensor:
+      - name: Dashboard Manager Kiosk Choices
+        unique_id: dashboard_manager_kiosk_choices
+        state: "ready"
+        attributes:
+          browsers: >-
+            {%- set ns = namespace(ids=[]) -%}
+            {%- for entity in integration_entities('browser_mod') -%}
+              {%- for domain, identifier in device_attr(entity, 'identifiers') or [] -%}
+                {%- if domain == 'browser_mod' and identifier not in ns.ids -%}
+                  {%- set ns.ids = ns.ids + [identifier] -%}
+                {%- endif -%}
+              {%- endfor -%}
+            {%- endfor -%}
+            {{- ns.ids | sort -}}
+          playlists: >-
+            {{ states.input_select | map(attribute='entity_id')
+               | select('match', '^input_select[.]dashboard_manager_playlist_')
+               | sort | list }}
+
+automation:
+  - id: dashboard_manager_refresh_kiosk_choices
+    alias: "[Dashboard] Refresh browser and playlist choices"
+    mode: restart
+    trigger:
+      - platform: state
+        entity_id: sensor.dashboard_manager_kiosk_choices
+      - platform: time_pattern
+        minutes: "/1"
+    action:
+      - variables:
+          browsers: "{{ state_attr('sensor.dashboard_manager_kiosk_choices', 'browsers') or [] }}"
+          playlists: "{{ state_attr('sensor.dashboard_manager_kiosk_choices', 'playlists') or [] }}"
+          current: "{{ states('input_text.dashboard_manager_target_browser') }}"
+      - repeat:
+          for_each: >-
+            {{ [
+              {'entity': 'input_select.dashboard_manager_browser_picker',
+               'options': browsers or ['No registered browsers']},
+              {'entity': 'input_select.dashboard_manager_copy_source',
+               'options': ['Primary kiosk', 'input_select.dashboard_rotation'] + playlists}
+            ] }}
+          sequence:
+            - if:
+                - "{{ state_attr(repeat.item.entity, 'options') != repeat.item.options }}"
+              then:
+                - service: input_select.set_options
+                  target:
+                    entity_id: "{{ repeat.item.entity }}"
+                  data:
+                    options: "{{ repeat.item.options }}"
+                - if:
+                    - "{{ repeat.item.entity == 'input_select.dashboard_manager_browser_picker'
+                           and current in browsers }}"
+                  then:
+                    - service: input_select.select_option
+                      target:
+                        entity_id: input_select.dashboard_manager_browser_picker
+                      data:
+                        option: "{{ current }}"
+
+  - id: dashboard_manager_restore_kiosk_playlists
+    alias: "[Dashboard] Restore copied kiosk playlists"
+    trigger:
+      - platform: homeassistant
+        event: start
+    action:
+      - repeat:
+          for_each: >-
+            {{ states.input_select | map(attribute='entity_id')
+               | select('match', '^input_select[.]dashboard_manager_playlist_')
+               | list }}
+          sequence:
+            - service: shell_command.dashboard_manager_read_kiosk_playlist
+              data:
+                playlist: "{{ repeat.item }}"
+              response_variable: result
+            - variables:
+                entries: "{{ result.stdout | from_json([]) if result.returncode == 0 else [] }}"
+            - if:
+                - "{{ result.returncode == 0 }}"
+              then:
+                - service: input_select.set_options
+                  target:
+                    entity_id: "{{ repeat.item }}"
+                  data:
+                    options: "{{ entries or ['No dashboards configured'] }}"
+
+script:
+  dashboard_manager_apply_browser:
+    alias: "[Dashboard] Designate selected kiosk as primary"
+    sequence:
+      - condition: template
+        value_template: >-
+          {{ states('input_select.dashboard_manager_browser_picker')
+             in (state_attr('sensor.dashboard_manager_kiosk_choices', 'browsers') or []) }}
+      - service: input_text.set_value
+        target:
+          entity_id: input_text.dashboard_manager_primary_kiosk
+        data:
+          value: "{{ states('input_select.dashboard_manager_browser_picker') }}"
+
+  dashboard_manager_copy_kiosk_playlist:
+    alias: "[Dashboard] Copy kiosk playlist"
+    mode: queued
+    sequence:
+      - variables:
+          source: >-
+            {% set primary = states('input_text.dashboard_manager_primary_kiosk') %}
+            {% set legacy = states('input_text.dashboard_manager_target_browser') %}
+            {% set chosen = states('input_select.dashboard_manager_copy_source') %}
+            {{ chosen if chosen != 'Primary kiosk' else
+               ('input_select.dashboard_rotation' if primary in ['', 'unknown', 'unavailable', legacy]
+                else 'input_select.dashboard_manager_playlist_' ~
+                     (primary | lower | regex_replace('[^a-z0-9_]+', '_'))) }}
+          destination: "{{ state_attr('sensor.dashboard_manager_selected_kiosk', 'playlist') }}"
+          playlists: "{{ state_attr('sensor.dashboard_manager_kiosk_choices', 'playlists') or [] }}"
+      - variables:
+          entries: >-
+            {{ (state_attr(source, 'options') or [])
+               | select('search', ' [|] /') | list }}
+      - if:
+          - "{{ source == destination or source not in (['input_select.dashboard_rotation'] + playlists)
+                 or destination not in (['input_select.dashboard_rotation'] + playlists) or entries | length == 0 }}"
+        then:
+          - service: persistent_notification.create
+            data:
+              title: Dashboard Manager
+              message: Choose different source and destination playlists and a source with dashboards.
+          - stop: Invalid playlist copy
+      - variables:
+          combined: >-
+            {%- set ns = namespace(entries=[], paths=[]) -%}
+            {%- for entry in (state_attr(destination, 'options') or []) + entries -%}
+              {%- set parts = entry.split(' | ') -%}
+              {%- if parts | length >= 2 and parts[1] not in ns.paths -%}
+                {%- set ns.entries = ns.entries + [entry] -%}
+                {%- set ns.paths = ns.paths + [parts[1]] -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {{- ns.entries -}}
+      - if:
+          - "{{ destination == 'input_select.dashboard_rotation' }}"
+        then:
+          - service: input_select.set_options
+            target:
+              entity_id: input_select.dashboard_rotation
+            data:
+              options: "{{ combined }}"
+          - service: script.dashboard_manager_save_to_json
+        else:
+          - service: script.dashboard_manager_save_kiosk_playlist
+            data:
+              destination: "{{ destination }}"
+              entries: "{{ combined }}"
+
+  dashboard_manager_save_kiosk_playlist:
+    alias: "[Dashboard] Save kiosk playlist"
+    mode: queued
+    sequence:
+      - condition: template
+        value_template: >-
+          {{ destination in (state_attr('sensor.dashboard_manager_kiosk_choices', 'playlists') or [])
+             and entries is sequence and entries is not string }}
+      - service: shell_command.dashboard_manager_write_kiosk_playlist
+        data:
+          playlist: "{{ destination }}"
+          payload: "{{ entries | to_json | base64_encode }}"
+        response_variable: result
+      - if:
+          - "{{ result.returncode != 0 }}"
+        then:
+          - service: persistent_notification.create
+            data:
+              title: Dashboard Manager
+              message: Could not save the copied playlist.
+          - stop: Playlist save failed
+      - service: input_select.set_options
+        target:
+          entity_id: "{{ destination }}"
+        data:
+          options: "{{ entries or ['No dashboards configured'] }}"
+
+  dashboard_manager_edit_kiosk_playlist:
+    alias: "[Dashboard] Edit selected kiosk playlist"
+    mode: queued
+    sequence:
+      - variables:
+          destination: "{{ state_attr('sensor.dashboard_manager_selected_kiosk', 'playlist') }}"
+      - condition: template
+        value_template: "{{ destination in (state_attr('sensor.dashboard_manager_kiosk_choices', 'playlists') or []) }}"
+      - variables:
+          options: "{{ (state_attr(destination, 'options') or []) | select('search', ' [|] /') | list }}"
+          selected: "{{ states(destination) }}"
+          raw_path: "{{ states('input_text.dashboard_manager_new_path') | trim }}"
+          seconds: "{{ states('input_text.dashboard_manager_new_display_time') | int(-1) }}"
+          label: "{{ states('input_text.dashboard_manager_new_label') | trim or 'Dashboard' }}"
+      - choose:
+          - conditions: "{{ operation == 'jump' and selected in options }}"
+            sequence:
+              - service: browser_mod.navigate
+                data:
+                  browser_id: "{{ [states('input_select.dashboard_manager_browser_picker')] }}"
+                  path: "{{ selected.split(' | ')[1] }}"
+              - stop: Navigation sent
+      - variables:
+          entries: >-
+            {%- set i = options.index(selected) if selected in options else -1 -%}
+            {%- if operation == 'add' and raw_path not in ['', 'unknown', 'unavailable']
+                   and not raw_path.startswith('//') and seconds >= 0 and ' | ' not in (label ~ raw_path) -%}
+              {%- set path = raw_path if raw_path.startswith('/') else '/' ~ raw_path -%}
+              {%- set primary = states('input_text.dashboard_manager_primary_kiosk') -%}
+              {%- set legacy = states('input_text.dashboard_manager_target_browser') -%}
+              {%- set source = 'input_select.dashboard_rotation' if primary in ['', 'unknown', 'unavailable', legacy]
+                   else 'input_select.dashboard_manager_playlist_' ~ (primary | lower | regex_replace('[^a-z0-9_]+', '_')) -%}
+              {%- set ns = namespace(entry=label ~ ' | ' ~ path ~ ' | ' ~ seconds) -%}
+              {%- for entry in state_attr(source, 'options') or [] if entry.split(' | ')[1:2] == [path] -%}
+                {%- set ns.entry = entry -%}
+              {%- endfor -%}
+              {{- options + [ns.entry] if not (options | select('search', ' [|] ' ~ (path | regex_escape) ~ ' [|] ') | list) else options -}}
+            {%- elif i >= 0 and operation == 'remove' -%}
+              {{- options[:i] + options[i+1:] -}}
+            {%- elif i > 0 and operation == 'up' -%}
+              {{- options[:i-1] + [options[i], options[i-1]] + options[i+1:] -}}
+            {%- elif i >= 0 and i < options | length - 1 and operation == 'down' -%}
+              {{- options[:i] + [options[i+1], options[i]] + options[i+2:] -}}
+            {%- elif i >= 0 and operation in ['duration', 'navbar'] -%}
+              {%- set parts = selected.split(' | ') -%}
+              {%- if operation == 'duration' and seconds >= 0 -%}
+                {%- set updated = parts[:2] + [seconds] + parts[3:] -%}
+              {%- elif operation == 'navbar' -%}
+                {%- set visible = parts | length < 4 or parts[3] | lower != 'false' -%}
+                {%- set updated = parts[:2] + [parts[2] if parts | length > 2 else '30', (not visible) | lower] + parts[4:] -%}
+              {%- else -%}
+                {%- set updated = parts -%}
+              {%- endif -%}
+              {{- options[:i] + [updated | join(' | ')] + options[i+1:] -}}
+            {%- else -%}
+              {{- options -}}
+            {%- endif -%}
+      - condition: template
+        value_template: "{{ entries != options }}"
+      - service: script.dashboard_manager_save_kiosk_playlist
+        data:
+          destination: "{{ destination }}"
+          entries: "{{ entries }}"
