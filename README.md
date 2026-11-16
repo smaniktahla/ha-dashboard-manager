@@ -11,6 +11,10 @@ Automatic kiosk rotation manager for Home Assistant. Rotate through dashboards o
 - **Voice-launched dashboards** — give each dashboard a few spoken *topics* ("pool", "internet", "weather"); when a voice query matches, the kiosk jumps to that dashboard for a short hold and then resumes rotation. One dashboard per topic, optional per-dashboard hold time, and *voice-only* dashboards that never appear in the rotation. See [Voice topics](#voice-topics).
 - **Nav overlay** — `navbar-card`, one identical block pasted into every dashboard; Previous/Next read the same rotation list Dashboard Manager maintains, so there's no separate list to keep in sync. Toggle visibility per-dashboard from the "Nav Bar on This Dashboard" switch.
 
+- **Independent kiosk rotations** — select a registered Browser Mod kiosk, start or stop its rotation, copy a playlist, and show the countdown for that kiosk. See [Multiple kiosks](#multiple-kiosks). ([#7](https://github.com/smaniktahla/ha-dashboard-manager/pull/7), [#9](https://github.com/smaniktahla/ha-dashboard-manager/pull/9), [#10](https://github.com/smaniktahla/ha-dashboard-manager/pull/10), [#11](https://github.com/smaniktahla/ha-dashboard-manager/pull/11))
+- **Pinned views and kiosk effects** — hold a page with a [route override](#pinning-a-page-on-the-kiosk-route-override) or set per-kiosk dashboard transitions and display fades with the [Kiosk Effects](#kiosk-effects) card. ([#6](https://github.com/smaniktahla/ha-dashboard-manager/pull/6), [#14](https://github.com/smaniktahla/ha-dashboard-manager/pull/14))
+- **Optional LCARS clock** — supply the theme's toolbar clock from Home Assistant with a shared 12- or 24-hour preference. ([#13](https://github.com/smaniktahla/ha-dashboard-manager/pull/13))
+
 <img width="1687" height="1206" alt="image" src="https://github.com/user-attachments/assets/23d305ce-dbff-40e7-8d5f-1f6f7a650273" />
 <img width="1651" height="1202" alt="image" src="https://github.com/user-attachments/assets/0a8ad4ff-dae8-4f34-8603-98db712cbe67" />
 
