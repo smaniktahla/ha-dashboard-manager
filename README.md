@@ -1,5 +1,5 @@
 # HA Dashboard Manager
-Turn your HA browser session into a rotation of dashboards you select! Camera feeds, news, weather, smart home device status, I've even got my CPAP metrics (CPAPs are sexy, shut up). 
+Rotate a Home Assistant browser through a playlist of dashboards with configurable display times.
 
 Automatic kiosk rotation manager for Home Assistant. Rotate through dashboards on a per-dashboard timer, and manage the rotation from a UI. Includes a single, reusable nav overlay ([`navbar-card`](https://github.com/joseluis9595/lovelace-navbar-card)) with Previous / Play-Pause / Stop / Next / a live countdown / a jump-to-manager button — the exact same card pasted into every dashboard, toggleable per-dashboard from the UI. See [Nav overlay](#nav-overlay) for why this replaced two earlier approaches that didn't hold up.
 
@@ -8,11 +8,22 @@ Automatic kiosk rotation manager for Home Assistant. Rotate through dashboards o
 - **Rotation** — timer-based, per-dashboard display times, auto-resumes after 5-minute pause (actually resumes the interrupted countdown, not a fresh one — see [Pausing rotation](#pausing-rotation-from-other-automations)), auto-starts on HA boot
 - **Persistent config** — rotation list stored as plain text in `/config/dashboard_rotation.txt`, one dashboard per line; HA restores it automatically across restarts with no race condition and no 255-character limit
 - **Dashboard picker** — enumerates all dashboards configured in HA; select from a dropdown to add to rotation. Only sees storage-mode (UI-created) dashboards — YAML-mode dashboards declared under `lovelace.dashboards` in `configuration.yaml` (like this one, and House Floorplan-style dashboards) don't show up in that dropdown at all, since they're never written to `.storage/lovelace_dashboards`, which is what the enumeration sensor reads. Add those via the "Add Dashboard Manually" form instead. HA's built-in panels (Energy, Map, Logbook, History, Calendar) aren't stored there either, so they come from a short editable `builtins` list in `dashboard_manager_persistence.yaml` and appear in the picker too (a built-in is skipped if a stored dashboard already uses its path).
-- **Voice-launched dashboards** — give each dashboard a few spoken *topics* ("pool", "internet", "weather"); when a voice query matches, the kiosk jumps to that dashboard for a short hold and then resumes rotation. One dashboard per topic, optional per-dashboard hold time, and *voice-only* dashboards that never appear in the rotation. See [Voice topics](#voice-topics).
+- **Voice-launched dashboards** — give each dashboard a few spoken *topics* ("weather", "forecast", "energy"); when a voice query matches, the kiosk jumps to that dashboard for a short hold and then resumes rotation. One dashboard per topic, optional per-dashboard hold time, and *voice-only* dashboards that never appear in the rotation. See [Voice topics](#voice-topics).
 - **Nav overlay** — `navbar-card`, one identical block pasted into every dashboard; Previous/Next read the same rotation list Dashboard Manager maintains, so there's no separate list to keep in sync. Toggle visibility per-dashboard from the "Nav Bar on This Dashboard" switch.
 
-<img width="1687" height="1206" alt="image" src="https://github.com/user-attachments/assets/23d305ce-dbff-40e7-8d5f-1f6f7a650273" />
-<img width="1651" height="1202" alt="image" src="https://github.com/user-attachments/assets/0a8ad4ff-dae8-4f34-8603-98db712cbe67" />
+- **Independent kiosk rotations** — select a registered Browser Mod kiosk, start or stop its rotation, copy a playlist, and show the countdown for that kiosk. See [Multiple kiosks](#multiple-kiosks). ([#7](https://github.com/smaniktahla/ha-dashboard-manager/pull/7), [#9](https://github.com/smaniktahla/ha-dashboard-manager/pull/9), [#10](https://github.com/smaniktahla/ha-dashboard-manager/pull/10), [#11](https://github.com/smaniktahla/ha-dashboard-manager/pull/11))
+- **Pinned views and kiosk effects** — hold a page with a [route override](#pinning-a-page-on-the-kiosk-route-override) or set per-kiosk dashboard transitions and display fades with the [Kiosk Effects](#kiosk-effects) card. ([#6](https://github.com/smaniktahla/ha-dashboard-manager/pull/6), [#14](https://github.com/smaniktahla/ha-dashboard-manager/pull/14))
+- **Optional LCARS clock** — supply the theme's toolbar clock from Home Assistant with a shared 12- or 24-hour preference. ([#13](https://github.com/smaniktahla/ha-dashboard-manager/pull/13))
+
+## Screenshots
+
+![Kiosk Effects controls for dashboard transitions and screen fades](docs/kiosk-effects.png)
+
+**Kiosk Effects** configures dashboard transitions, screen-off fade, wake offset, and wake fade-in per kiosk.
+
+![Blank Add Dashboard Manually form with label, path, and display-time fields](docs/add-dashboard-manually.png)
+
+**Add Dashboard Manually** adds a dashboard by path with a custom display time or as a voice-only entry.
 
 ## Dependencies (all via HACS)
 
@@ -98,13 +109,13 @@ rotation.
 1. In the kiosk's signed-in browser, open **Browser Mod** in the Home Assistant
    sidebar and register the browser. Set its Browser ID to the kiosk hostname,
    preserving case. For example, open Home Assistant on that kiosk with
-   `?BrowserID=N5105` and confirm that Browser Mod shows `N5105`. Browser Mod
+   `?BrowserID=EXAMPLE01` and confirm that Browser Mod shows `EXAMPLE01`. Browser Mod
    assigns IDs to browser sessions. If you want to keep an existing Browser Mod
    ID, enter it in the blueprint's **Browser Mod ID override** field.
 2. Copy [the automation blueprint](blueprints/automation/dashboard_manager/kiosk_rotation.yaml)
    to `/config/blueprints/automation/dashboard_manager/kiosk_rotation.yaml`.
    Reload automations. Create a separate **Toggle** helper for each kiosk with
-   an entity ID such as `input_boolean.dashboard_manager_kiosk_n5105`.
+   an entity ID such as `input_boolean.dashboard_manager_kiosk_example01`.
 3. In **Settings → Automations & Scenes → Blueprints**, create one automation
    from **Dashboard Manager kiosk rotation** for each additional kiosk. Enter
    its hostname and select its Toggle helper. Leave **Rotation list** on
@@ -128,7 +139,7 @@ additional kiosks that use that list at its first rotating page.
 Create a dedicated Timer helper and enter its entity ID in the rotation
 blueprint's **Kiosk countdown timer** field. Use
 `timer.dashboard_manager_kiosk_<browser_id>` with the same suffix as the
-kiosk's rotation switch. For example, use `timer.dashboard_manager_kiosk_n5105`.
+kiosk's rotation switch. For example, use `timer.dashboard_manager_kiosk_example01`.
 Give each kiosk its own timer and leave timer restoration disabled.
 
 Update the countdown route in the deployed navbar cards from the current
@@ -138,12 +149,12 @@ existing delay and the additional kiosk's countdown is blank.
 
 ### Set up a separate playlist for a kiosk
 
-Create a Dropdown helper named `input_select.dashboard_manager_playlist_n5105`
-with the option `No dashboards configured`, replacing `n5105` with the
+Create a Dropdown helper named `input_select.dashboard_manager_playlist_example01`
+with the option `No dashboards configured`, replacing `example01` with the
 lowercase Browser Mod ID. Replace runs of characters outside letters,
 digits, and underscores with an underscore. Use the same suffix on the
 kiosk's rotation switch, for example
-`input_boolean.dashboard_manager_kiosk_n5105`. Select both helpers in
+`input_boolean.dashboard_manager_kiosk_example01`. Select both helpers in
 the kiosk's rotation blueprint.
 
 Pick the kiosk in **Kiosk to manage**. In **Add All Dashboards**, choose the
@@ -169,7 +180,7 @@ The rotation list lives in `input_select.dashboard_rotation` at runtime, as
 pipe-delimited option strings:
 
 ```
-Cameras | /live-camera-test/cameras | 30
+Weather | /dashboard-weather/0 | 30
 ```
 
 These are persisted to disk as plain text in `/config/dashboard_rotation.txt`,
@@ -177,8 +188,8 @@ These are persisted to disk as plain text in `/config/dashboard_rotation.txt`,
 your own copy under version control:
 
 ```
-Cameras | /live-camera-test/cameras | 30
-News | /dashboard-news/0 | 60
+Weather | /dashboard-weather/0 | 30
+Energy | /energy | 60
 ```
 
 Each line is `Label | path | seconds`, optionally followed by `| nav-flag | topics | voice-hold`
@@ -234,7 +245,7 @@ attribute, which is a way to recover a list that was lost this way.
 
 ## Pausing rotation from other automations
 
-If you want another automation (a camera alert popup, a doorbell announcement,
+If you want another automation (a notification popup, a status announcement,
 etc.) to pause rotation while it does something and resume it afterward, target
 **`input_boolean.dashboard_rotation_paused`** — turn it `on` to pause, `off` to
 resume. This is the only supported pause mechanism; earlier iterations of this
@@ -267,7 +278,7 @@ check this boolean before assuming something's broken.
 `packages/kiosk_route.yaml` adds `script.kiosk_route_show` / `script.kiosk_route_close` and `input_boolean.kiosk_route_active`. Showing pauses the rotation,
 sets the flag and navigates the Target Browser to the page in `input_text.kiosk_route_path` (default `/kiosk-route/route`; see
 [`dashboards/kiosk_route_dashboard.example.yaml`](dashboards/kiosk_route_dashboard.example.yaml) for a full-screen iframe dashboard). While the flag is on, the
-rotator's timer, 5-minute auto-resume, start-on-HA-start automations and `script.dashboard_show` do nothing, so another automation's pause/unpause (a camera
+rotator's timer, 5-minute auto-resume, start-on-HA-start automations and `script.dashboard_show` do nothing, so another automation's pause/unpause (a notification
 popup finishing) or a voice topic cannot move the display off the pinned page. Popups are overlays and are untouched: when one closes the page is visible
 again. The flag survives an HA restart, and if the kiosk browser reloads onto another page while it is on, it is sent back after 10 seconds. Closing clears the
 flag and resumes the rotation at the next dashboard. Reload scripts/automations/helpers after copying (no restart needed).
@@ -276,8 +287,7 @@ flag and resumes the rotation at the next dashboard. Reload scripts/automations/
 
 Voice assistants are good at *answering*; a wall display is good at *showing*.
 This lets a spoken question put the matching dashboard on screen: ask about the
-pool and the pool cameras come up, ask about the internet and the firewall stats
-appear, then the display goes back to rotating.
+weather to show the forecast, then the display goes back to rotating.
 
 ### Setting topics
 
@@ -287,8 +297,8 @@ comma-separated topics into **Voice topics**, and press **Save Voice Settings**
 that dashboard's rotation entry (the [voice hold](#voice-hold) is the 6th), e.g.:
 
 ```
-Swimming Pool | /swimming-pool/cameras | 30 | true | pool, swimming
-OPNsense | /dashboard-opnsense/opnsense-stats | 30 | true | internet, wan, network connection
+Weather | /dashboard-weather/0 | 30 | true | weather, forecast
+Energy | /energy | 30 | true | energy, power usage
 ```
 
 - Topics are lowercased and reduced to letters, digits and spaces. Multi-word topics are fine.
@@ -326,7 +336,7 @@ in the same panel as the topics and save with **Save Voice Settings**.
 ### How a query is matched
 
 `script.dashboard_show_for_utterance` takes the text and looks for each topic as a
-whole word (a trailing "s" is also accepted, so `camera` matches "cameras"). If several
+whole word (a trailing "s" is also accepted, so `forecast` matches "forecasts"). If several
 dashboards match, the **longest topic wins** (the most specific), then the one that
 appears earliest in the sentence, so at most one dashboard is launched. No match does
 nothing.
@@ -364,21 +374,16 @@ automation:
 ```
 
 With a custom conversation agent, fire the same event from code, for example
-`hass.bus.async_fire("needle_voice_utterance", {"text": user_input.text})`. In the
-author's setup the router fires it only for informational questions it hands to the
-LLM (not for device commands such as "turn off the pool light", which would otherwise
-pop up the pool dashboard), once when the question arrives and again when the
-answer comes back so the dashboard is still showing when the answer is spoken.
+`hass.bus.async_fire("needle_voice_utterance", {"text": user_input.text})`. For informational questions, an agent can fire it when the question arrives and again when the answer comes back, so the dashboard remains visible during the response.
 
 > **Gotcha for anyone extending these scripts:** HA strips leading/trailing whitespace
 > from rendered template variables, so a variable holding `" | topics"` silently loses
-> its leading space and glues fields together (`true| pool`). Build entries with
+> its leading space and glues fields together (`true| weather`). Build entries with
 > `[...] | join(' | ')` instead of concatenating a suffix variable.
 
-## LCARS theme (Personal Note)
-I like running the LCARS theme on my kiosk display, because it's fun and I like Star Trek.
+## LCARS theme
 
-HA-LCARS 4.x (with card-mod 4.x) changed the CSS element selector from `ha-card` to `hui-card`. Any card using `card_mod: style: ha-card { height: Xpx }` to constrain button height will break — the LCARS theme's flex styles take over and stretch buttons full-height (as seen in the screenshot).
+HA-LCARS 4.x (with card-mod 4.x) changed the CSS element selector from `ha-card` to `hui-card`. Any card using `card_mod: style: ha-card { height: Xpx }` to constrain button height will break — the LCARS theme's flex styles take over and stretch buttons full-height.
 
 The nav overlay uses `custom:button-card` with `styles.card` instead of card-mod, which is isolated from theme CSS selectors entirely. Height and sizing are always respected regardless of active theme.
 
