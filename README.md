@@ -34,6 +34,7 @@ Copy the package files from `packages/` to `/config/packages/`:
 - `dashboard_manager_rotator.yaml`
 - `dashboard_manager_kiosk_management.yaml`
 - `dashboard_shell_commands.yaml`
+- `dashboard_manager_kiosk_effects.yaml` (optional - the per-kiosk [Kiosk Effects](#kiosk-effects) card)
 - `dashboard_manager_voice.yaml` (optional - only needed for [Voice topics](#voice-topics) / `script.dashboard_show`)
 
 Copy `dashboard_manager/kiosk_playlist.py` to `/config/dashboard_manager/`.
@@ -380,3 +381,16 @@ I like running the LCARS theme on my kiosk display, because it's fun and I like 
 HA-LCARS 4.x (with card-mod 4.x) changed the CSS element selector from `ha-card` to `hui-card`. Any card using `card_mod: style: ha-card { height: Xpx }` to constrain button height will break — the LCARS theme's flex styles take over and stretch buttons full-height (as seen in the screenshot).
 
 The nav overlay uses `custom:button-card` with `styles.card` instead of card-mod, which is isolated from theme CSS selectors entirely. Height and sizing are always respected regardless of active theme.
+
+## Kiosk Effects
+
+The **Kiosk Effects** card (center column of the Dashboard Manager) sets how the *selected kiosk* animates:
+
+- **Dashboard transition** — `none`, `fade` (to black, switch, back in) or `crossfade`, with its length and a hold time for the new dashboard to render. (Crossfade needs a GPU-rendered browser to look smooth; on software-rendered kiosks plain fade is better.)
+- **Screen off / on** — the fade-out when the screen blanks, the black offset while a sleeping monitor wakes, and the fade-in.
+
+Pick the kiosk under *Kiosks*, change values, press **Apply to kiosk**. Values are stored in `/config/www/kiosk_effects.json` (one entry per Browser Mod id, written by `dashboard_manager/kiosk_effects.py`), so they survive restarts without relying on helper states; picking a kiosk or an HA start loads its saved values back into the card. The kiosks fetch `http://<ha>/local/kiosk_effects.json` (non-sensitive, no auth) and follow it within seconds; the kiosk side lives in the Nina repo under `kiosk-host/` (`kiosk-page-fade` and `kiosk-camera-wake`).
+
+Install: copy `packages/dashboard_manager_kiosk_effects.yaml` to `/config/packages/`, `dashboard_manager/kiosk_effects.py` to `/config/dashboard_manager/`, update the dashboard YAML, then **restart Home Assistant**. Do not use *Reload Input Select* to add the new helpers on a running system: a reload resets every dynamically-set `input_select` (the rotation list, kiosk playlists, the kiosk picker) to its YAML default until the restore automations run again (they only run on start; trigger `[Dashboard] Restore rotation on HA start` and `[Dashboard] Restore copied kiosk playlists` by hand if it happens).
+
+The manager also shows a **Still starting up** banner at the top of the Kiosks column while the kiosk list has not been populated yet after a restart (it fills in within a minute).
