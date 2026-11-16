@@ -1,0 +1,28 @@
+# Optional: copy to /config/packages/ if using an LCARS theme with header-clock
+# support. The theme must be applied and the Lovelace header visible.
+# If sensor.lcars_header already exists, update its template instead of
+# installing a second sensor with the same entity ID.
+#
+# Change the format under Settings > Devices & services > Helpers, or add
+# input_select.lcars_clock_format to an Entities card in Dashboard Manager.
+# This selection applies to all dashboards using the LCARS header.
+input_select:
+  lcars_clock_format:
+    name: LCARS clock format
+    icon: mdi:clock-outline
+    options:
+      - "12-hour"
+      - "24-hour"
+
+template:
+  - sensor:
+      - name: LCARS Header
+        default_entity_id: sensor.lcars_header
+        unique_id: dashboard_manager_lcars_header_clock
+        state: >-
+          {% set time = now() %}
+          {% if is_state('input_select.lcars_clock_format', '24-hour') %}
+            {{ time.strftime('%H:%M') }}
+          {% else %}
+            {{ time.strftime('%I:%M %p').lstrip('0') }}
+          {% endif %}
