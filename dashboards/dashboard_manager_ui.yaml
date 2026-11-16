@@ -391,19 +391,28 @@ views:
               Settings for **{{ states('input_select.dashboard_manager_browser_picker') }}**
               (the kiosk picked under Kiosks). Change values, then press **Apply to kiosk**;
               it follows within a few seconds, no restart.
+              *Hold* is how long the new dashboard gets to render before fading back in; *Wake offset*
+              is how long the screen stays black while a sleeping monitor wakes. Crossfade looks choppy
+              on kiosks that render in software, so prefer fade there.
           - type: entities
             show_header_toggle: false
             entities:
               - type: section
                 label: Dashboard transition
               - entity: input_select.kiosk_effects_transition_mode
+                name: Dashboard transition
               - entity: input_number.kiosk_effects_transition_seconds
+                name: Transition length
               - entity: input_number.kiosk_effects_transition_hold
+                name: Transition hold
               - type: section
                 label: Screen off / on (presence)
               - entity: input_number.kiosk_effects_blank_fade
+                name: Screen-off fade
               - entity: input_number.kiosk_effects_wake_delay
+                name: Wake offset
               - entity: input_number.kiosk_effects_wake_fade
+                name: Wake fade-in
             footer:
               type: buttons
               entities:

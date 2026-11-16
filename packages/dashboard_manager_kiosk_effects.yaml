@@ -26,7 +26,7 @@ input_number:
     mode: slider
     icon: mdi:timer-sand
   kiosk_effects_transition_hold:
-    name: Transition hold (new dashboard renders)
+    name: Transition hold
     min: 0
     max: 5
     step: 0.1
@@ -42,7 +42,7 @@ input_number:
     mode: slider
     icon: mdi:monitor-off
   kiosk_effects_wake_delay:
-    name: Wake offset (black while the monitor wakes)
+    name: Wake offset
     min: 0
     max: 6
     step: 0.1
